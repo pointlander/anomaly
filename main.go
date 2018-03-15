@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"image"
 	"image/color"
 	_ "image/jpeg"
@@ -21,11 +22,12 @@ import (
 )
 
 const (
-	testImage = "images/pexels-photo-103573.jpeg"
-	blockSize = 8
-	netWidth  = 3 * blockSize * blockSize
-	hiddens   = netWidth / 64
-	symbols   = 'z' - 'a'
+	testImage  = "images/pexels-photo-103573.jpeg"
+	blockSize  = 8
+	netWidth   = 3 * blockSize * blockSize
+	hiddens    = netWidth / 64
+	symbols    = 'z' - 'a'
+	vectorSize = 1024
 )
 
 func imagesDemo() {
@@ -188,8 +190,66 @@ func generateJSON() map[string]interface{} {
 			hash[sampleName()] = array
 		}
 	}
-	hash := make(map[string]interface{})
-	generate(hash, 0)
+	object := make(map[string]interface{})
+	generate(object, 0)
+	return object
+}
+
+func hash(a []string) uint64 {
+	h := fnv.New64()
+	for _, s := range a {
+		h.Write([]byte(s))
+	}
+	return h.Sum64()
+}
+
+var cache = make(map[uint64][]int8)
+
+func lookup(a []string) []int8 {
+	h := hash(a)
+	transform, found := cache[h]
+	if found {
+		return transform
+	}
+	transform = make([]int8, vectorSize)
+	rnd := rand.New(rand.NewSource(int64(h)))
+	for i := range transform {
+		// https://en.wikipedia.org/wiki/Random_projection#More_computationally_efficient_random_projections
+		// make below distribution function of vector element index
+		switch rnd.Intn(6) {
+		case 0:
+			transform[i] = 1
+		case 1:
+			transform[i] = -1
+		}
+	}
+	cache[h] = transform
+	return transform
+}
+
+func hashJSON(object map[string]interface{}) []int64 {
+	hash := make([]int64, vectorSize)
+	var process func(object map[string]interface{}, context []string)
+	process = func(object map[string]interface{}, context []string) {
+		for k, v := range object {
+			sub := append(context, k)
+			switch value := v.(type) {
+			case []interface{}:
+				for _, i := range value {
+					process(i.(map[string]interface{}), sub)
+				}
+			case string:
+				sub = append(sub, value)
+				for i := range sub {
+					transform := lookup(sub[i:])
+					for x, y := range transform {
+						hash[x] += int64(y)
+					}
+				}
+			}
+		}
+	}
+	process(object, make([]string, 0))
 	return hash
 }
 
@@ -202,10 +262,12 @@ func main() {
 		imagesDemo()
 	}
 
-	hash := generateJSON()
-	data, err := json.MarshalIndent(hash, "", " ")
+	object := generateJSON()
+	data, err := json.MarshalIndent(object, "", " ")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(string(data))
+	hash := hashJSON(object)
+	fmt.Println(hash)
 }
