@@ -5,6 +5,8 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
@@ -23,9 +25,10 @@ const (
 	blockSize = 8
 	netWidth  = 3 * blockSize * blockSize
 	hiddens   = netWidth / 64
+	symbols   = 'z' - 'a'
 )
 
-func main() {
+func imagesDemo() {
 	file, err := os.Open(testImage)
 	if err != nil {
 		log.Fatal(err)
@@ -143,4 +146,66 @@ func main() {
 		log.Fatal(err)
 	}
 	file.Close()
+}
+
+func generateJSON() map[string]interface{} {
+	sample := func(stddev float64) int {
+		return int(math.Abs(rand.NormFloat64()) * stddev)
+	}
+	sampleCount := func() int {
+		return sample(1) + 1
+	}
+	sampleName := func() string {
+		s := sample(8)
+		if s > symbols {
+			s = symbols
+		}
+		return string('a' + s)
+	}
+	sampleValue := func() string {
+		value := sampleName()
+		return value + value
+	}
+	sampleDepth := func() int {
+		return sample(3)
+	}
+	var generate func(hash map[string]interface{}, depth int)
+	generate = func(hash map[string]interface{}, depth int) {
+		count := sampleCount()
+		if depth > sampleDepth() {
+			for i := 0; i < count; i++ {
+				hash[sampleName()] = sampleValue()
+			}
+			return
+		}
+		for i := 0; i < count; i++ {
+			array := make([]interface{}, sampleCount())
+			for j := range array {
+				sub := make(map[string]interface{})
+				generate(sub, depth+1)
+				array[j] = sub
+			}
+			hash[sampleName()] = array
+		}
+	}
+	hash := make(map[string]interface{})
+	generate(hash, 0)
+	return hash
+}
+
+var images = flag.Bool("images", false, "run images demo")
+
+func main() {
+	flag.Parse()
+
+	if *images {
+		imagesDemo()
+	}
+
+	hash := generateJSON()
+	data, err := json.MarshalIndent(hash, "", " ")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(data))
 }
