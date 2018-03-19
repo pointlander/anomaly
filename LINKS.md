@@ -12,3 +12,9 @@ https://www.datascience.com/blog/python-anomaly-detection
 # Kalman filters
 http://htmlpreview.github.io/?https://github.com/aguaviva/KalmanFilter/blob/master/KalmanFilter.html  
 
+# Commercial Solution
+https://news.ycombinator.com/item?id=16601241  
+https://blog.machinebox.io/mute-uninteresting-log-noise-with-machine-learning-daa19f6e222  
+
+# Anomaly Detection in Time Series using Auto Encoders
+http://philipperemy.github.io/anomaly-detection/  
