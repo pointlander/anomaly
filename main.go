@@ -19,9 +19,16 @@ import (
 )
 
 const (
-	symbols    = 'z' - 'a'
-	vectorSize = 1024
-	samples    = 1000
+	// Symbols is the number of symbols to use for JSON generation
+	Symbols = 'z' - 'a'
+	// VectorSize is the size of the JSON document vector
+	VectorSize = 1024
+	// Samples is the number of JSON documents to generate per trial
+	Samples = 1000
+	// Trials is the number of trials
+	Trials = 100
+	// Parallelization is how many trials to perform in parallel
+	Parallelization = 10
 )
 
 var tests = []string{`{
@@ -44,17 +51,17 @@ var tests = []string{`{
  ]
 }`}
 
-func generateJSON() map[string]interface{} {
+func generateJSON(rnd *rand.Rand) map[string]interface{} {
 	sample := func(stddev float64) int {
-		return int(math.Abs(rand.NormFloat64()) * stddev)
+		return int(math.Abs(rnd.NormFloat64()) * stddev)
 	}
 	sampleCount := func() int {
 		return sample(1) + 1
 	}
 	sampleName := func() string {
 		s := sample(8)
-		if s > symbols {
-			s = symbols
+		if s > Symbols {
+			s = Symbols
 		}
 		return string('a' + s)
 	}
@@ -97,15 +104,19 @@ func hash(a []string) uint64 {
 	return h.Sum64()
 }
 
-var cache = make(map[uint64][]int8)
+// Vectorizer converts JSON documents to vectors
+type Vectorizer struct {
+	Cache map[uint64][]int8
+}
 
-func lookup(a []string) []int8 {
+// Lookup looks a vector up
+func (v *Vectorizer) Lookup(a []string) []int8 {
 	h := hash(a)
-	transform, found := cache[h]
+	transform, found := v.Cache[h]
 	if found {
 		return transform
 	}
-	transform = make([]int8, vectorSize)
+	transform = make([]int8, VectorSize)
 	rnd := rand.New(rand.NewSource(int64(h)))
 	for i := range transform {
 		// https://en.wikipedia.org/wiki/Random_projection#More_computationally_efficient_random_projections
@@ -117,17 +128,18 @@ func lookup(a []string) []int8 {
 			transform[i] = -1
 		}
 	}
-	cache[h] = transform
+	v.Cache[h] = transform
 	return transform
 }
 
-func hashJSON(object map[string]interface{}) []int64 {
-	hash := make([]int64, vectorSize)
+// Hash produces a vector from a JSON object
+func (v *Vectorizer) Hash(object map[string]interface{}) []int64 {
+	hash := make([]int64, VectorSize)
 	var process func(object map[string]interface{}, context []string)
 	process = func(object map[string]interface{}, context []string) {
-		for k, v := range object {
+		for k, val := range object {
 			sub := append(context, k)
-			switch value := v.(type) {
+			switch value := val.(type) {
 			case []interface{}:
 				for _, i := range value {
 					process(i.(map[string]interface{}), sub)
@@ -135,7 +147,7 @@ func hashJSON(object map[string]interface{}) []int64 {
 			case string:
 				sub = append(sub, value)
 				for i := range sub {
-					transform := lookup(sub[i:])
+					transform := v.Lookup(sub[i:])
 					for x, y := range transform {
 						hash[x] += int64(y)
 					}
@@ -151,6 +163,15 @@ func sigmoid32(x float32) float32 {
 	return 1 / (1 + float32(math.Exp(-float64(x))))
 }
 
+func tanh32(x float32) float32 {
+	a, b := math.Exp(float64(x)), math.Exp(-float64(x))
+	return float32((a - b) / (a + b))
+}
+
+func dtanh32(x float32) float32 {
+	return 1 - x*x
+}
+
 func normalize(a []int64) []float32 {
 	sum := 0.0
 	for _, v := range a {
@@ -160,6 +181,7 @@ func normalize(a []int64) []float32 {
 	b := make([]float32, len(a))
 	for i, v := range a {
 		b[i] = sigmoid32(float32(v) / float32(sum))
+		//b[i] = float32(v) / float32(sum)
 	}
 	return b
 }
@@ -178,18 +200,33 @@ func similarity(a, b []float32) float64 {
 var images = flag.Bool("images", false, "run images demo")
 
 func anomaly(seed int) (values, sims plotter.Values, correct bool) {
-	rand.Seed(int64(seed))
+	rnd := rand.New(rand.NewSource(int64(seed)))
 
 	config := func(n *neural.Neural32) {
-		n.Init(neural.WeightInitializer32FanIn, vectorSize, vectorSize/2, vectorSize)
+		random32 := func(a, b float32) float32 {
+			return (b-a)*rnd.Float32() + a
+		}
+		weightInitializer := func(in, out int) float32 {
+			return random32(-1, 1) / float32(math.Sqrt(float64(in)))
+		}
+		n.Init(weightInitializer, VectorSize, VectorSize/2, VectorSize)
+		/*for f := range n.Functions {
+			n.Functions[f] = neural.FunctionPair32{
+				F:  tanh32,
+				DF: dtanh32,
+			}
+		}*/
+		//n.EnableDropout(.5)
 	}
 	nn := neural.NewNeural32(config)
 	context := nn.NewContext()
-
-	values, sims = make(plotter.Values, samples), make(plotter.Values, samples)
-	for i := 0; i < samples; i++ {
-		object := generateJSON()
-		hash := hashJSON(object)
+	vectorizer := &Vectorizer{
+		Cache: make(map[uint64][]int8),
+	}
+	values, sims = make(plotter.Values, Samples), make(plotter.Values, Samples)
+	for i := 0; i < Samples; i++ {
+		object := generateJSON(rnd)
+		hash := vectorizer.Hash(object)
 		input := normalize(hash)
 
 		context.SetInput(input)
@@ -203,6 +240,7 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 			return data
 		}
 		e := nn.Train(source, 1, 0.6, 0.4)
+		//e := nn.Train(source, 1, 0.1, 0.0001)
 		values[i] = float64(e[0])
 	}
 	values = values[100:]
@@ -225,7 +263,7 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 		if err != nil {
 			panic(err)
 		}
-		hash := hashJSON(object)
+		hash := vectorizer.Hash(object)
 		input := normalize(hash)
 
 		context.SetInput(input)
@@ -240,6 +278,7 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 			return data
 		}
 		e := nn.Train(source, 1, 0.6, 0.4)
+		//e := nn.Train(source, 1, 0.1, 0.0001)
 		surprise[i] = math.Abs((float64(e[0]) - average) / stddev)
 		fmt.Println(surprise[i])
 
@@ -284,12 +323,33 @@ func main() {
 	plot("Output", "output.png", values)
 	plot("Sims", "sims.png", sims)
 
-	count := 0
-	for i := 1; i <= 100; i++ {
-		_, _, correct := anomaly(i)
+	count, results, j := 0, make(chan bool, Parallelization), 1
+	for i := 0; i < Parallelization; i++ {
+		go func(j int) {
+			_, _, correct := anomaly(j)
+			results <- correct
+		}(j)
+		j++
+	}
+	total := 0
+	for j <= Trials {
+		correct := <-results
 		if correct {
 			count++
 		}
+		total++
+		go func(j int) {
+			_, _, correct := anomaly(j)
+			results <- correct
+		}(j)
+		j++
 	}
-	fmt.Printf("count=%v\n", count)
+	for total < Trials {
+		correct := <-results
+		if correct {
+			count++
+		}
+		total++
+	}
+	fmt.Printf("count=%v/%v\n", count, total)
 }
