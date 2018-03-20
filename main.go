@@ -177,14 +177,8 @@ func similarity(a, b []float32) float64 {
 
 var images = flag.Bool("images", false, "run images demo")
 
-func main() {
-	flag.Parse()
-
-	if *images {
-		imagesDemo()
-	}
-
-	rand.Seed(1)
+func anomaly(seed int) (values, sims plotter.Values, correct bool) {
+	rand.Seed(int64(seed))
 
 	config := func(n *neural.Neural32) {
 		n.Init(neural.WeightInitializer32FanIn, vectorSize, vectorSize/2, vectorSize)
@@ -192,7 +186,7 @@ func main() {
 	nn := neural.NewNeural32(config)
 	context := nn.NewContext()
 
-	values, sims := make(plotter.Values, samples), make(plotter.Values, samples)
+	values, sims = make(plotter.Values, samples), make(plotter.Values, samples)
 	for i := 0; i < samples; i++ {
 		object := generateJSON()
 		hash := hashJSON(object)
@@ -211,9 +205,63 @@ func main() {
 		e := nn.Train(source, 1, 0.6, 0.4)
 		values[i] = float64(e[0])
 	}
-	values = values[10:]
-	sims = sims[10:]
+	values = values[100:]
+	sims = sims[100:]
 
+	sum, sumSquared, length := 0.0, 0.0, float64(len(values))
+	for _, v := range values {
+		value := float64(v)
+		sum += value
+		sumSquared += value * value
+	}
+	average := sum / length
+	stddev := math.Sqrt(sumSquared/length - average*average)
+	fmt.Printf("avg=%v stddev=%v\n", average, stddev)
+
+	surprise := make([]float64, len(tests))
+	for i, test := range tests {
+		var object map[string]interface{}
+		err := json.Unmarshal([]byte(test), &object)
+		if err != nil {
+			panic(err)
+		}
+		hash := hashJSON(object)
+		input := normalize(hash)
+
+		context.SetInput(input)
+		context.Infer()
+		outputs := context.GetOutput()
+		sim := float64(similarity(input, outputs))
+		fmt.Printf("sim before=%v\n", sim)
+
+		source := func(iterations int) [][][]float32 {
+			data := make([][][]float32, 1)
+			data[0] = [][]float32{input, input}
+			return data
+		}
+		e := nn.Train(source, 1, 0.6, 0.4)
+		surprise[i] = math.Abs((float64(e[0]) - average) / stddev)
+		fmt.Println(surprise[i])
+
+		context.SetInput(input)
+		context.Infer()
+		outputs = context.GetOutput()
+		sim = float64(similarity(input, outputs))
+		fmt.Printf("sim after=%v\n", sim)
+	}
+	correct = surprise[0] > surprise[1]
+
+	return
+}
+
+func main() {
+	flag.Parse()
+
+	if *images {
+		imagesDemo()
+	}
+
+	values, sims, _ := anomaly(1)
 	plot := func(title, name string, values plotter.Values) {
 		p, err := plot.New()
 		if err != nil {
@@ -236,43 +284,12 @@ func main() {
 	plot("Output", "output.png", values)
 	plot("Sims", "sims.png", sims)
 
-	sum, sumSquared, length := 0.0, 0.0, float64(len(values))
-	for _, v := range values {
-		value := float64(v)
-		sum += value
-		sumSquared += value * value
-	}
-	average := sum / length
-	stddev := math.Sqrt(sumSquared/length - average*average)
-	fmt.Printf("avg=%v stddev=%v\n", average, stddev)
-
-	for _, test := range tests {
-		var object map[string]interface{}
-		err := json.Unmarshal([]byte(test), &object)
-		if err != nil {
-			panic(err)
+	count := 0
+	for i := 1; i <= 100; i++ {
+		_, _, correct := anomaly(i)
+		if correct {
+			count++
 		}
-		hash := hashJSON(object)
-		input := normalize(hash)
-
-		context.SetInput(input)
-		context.Infer()
-		outputs := context.GetOutput()
-		sim := float64(similarity(input, outputs))
-		fmt.Printf("sim before=%v\n", sim)
-
-		source := func(iterations int) [][][]float32 {
-			data := make([][][]float32, 1)
-			data[0] = [][]float32{input, input}
-			return data
-		}
-		e := nn.Train(source, 1, 0.6, 0.4)
-		fmt.Println((float64(e[0]) - average) / stddev)
-
-		context.SetInput(input)
-		context.Infer()
-		outputs = context.GetOutput()
-		sim = float64(similarity(input, outputs))
-		fmt.Printf("sim after=%v\n", sim)
 	}
+	fmt.Printf("count=%v\n", count)
 }
