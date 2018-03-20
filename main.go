@@ -106,7 +106,8 @@ func hash(a []string) uint64 {
 
 // Vectorizer converts JSON documents to vectors
 type Vectorizer struct {
-	Cache map[uint64][]int8
+	Cache  map[uint64][]int8
+	Source func(seed uint64) Source
 }
 
 // Lookup looks a vector up
@@ -117,16 +118,9 @@ func (v *Vectorizer) Lookup(a []string) []int8 {
 		return transform
 	}
 	transform = make([]int8, VectorSize)
-	rnd := rand.New(rand.NewSource(int64(h)))
+	rnd := v.Source(h)
 	for i := range transform {
-		// https://en.wikipedia.org/wiki/Random_projection#More_computationally_efficient_random_projections
-		// make below distribution function of vector element index
-		switch rnd.Intn(6) {
-		case 0:
-			transform[i] = 1
-		case 1:
-			transform[i] = -1
-		}
+		transform[i] = rnd.Int()
 	}
 	v.Cache[h] = transform
 	return transform
@@ -197,8 +191,6 @@ func similarity(a, b []float32) float64 {
 	return dot / math.Sqrt(xx*yy)
 }
 
-var images = flag.Bool("images", false, "run images demo")
-
 func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 	rnd := rand.New(rand.NewSource(int64(seed)))
 
@@ -221,7 +213,8 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 	nn := neural.NewNeural32(config)
 	context := nn.NewContext()
 	vectorizer := &Vectorizer{
-		Cache: make(map[uint64][]int8),
+		Cache:  make(map[uint64][]int8),
+		Source: NewLFSR32Source,
 	}
 	values, sims = make(plotter.Values, Samples), make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
@@ -293,11 +286,20 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 	return
 }
 
+var images = flag.Bool("images", false, "run images demo")
+var lfsr = flag.Bool("lfsr", false, "run lfsr")
+
 func main() {
 	flag.Parse()
 
 	if *images {
 		imagesDemo()
+		return
+	}
+
+	if *lfsr {
+		searchLFSR32()
+		return
 	}
 
 	values, sims, _ := anomaly(1)
