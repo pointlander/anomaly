@@ -189,7 +189,8 @@ func adapt(a []float32) []float32 {
 	return b
 }
 
-func similarity(a, b []float32) float64 {
+// Similarity computes the cosine similarity between two vectors
+func Similarity(a, b []float32) float64 {
 	dot, xx, yy := 0.0, 0.0, 0.0
 	for i, j := range b {
 		x, y := float64(a[i]), float64(j)
@@ -200,11 +201,20 @@ func similarity(a, b []float32) float64 {
 	return dot / math.Sqrt(xx*yy)
 }
 
+// TestResult is a test result
+type TestResult struct {
+	Surprise         float64
+	SimilarityBefore float64
+	SimilarityAfter  float64
+}
+
 // TestResults are the test results from Anomaly
 type TestResults struct {
-	Values, Sims    plotter.Values
-	NearestNeighbor []float64
-	Correct         bool
+	AutoencoderError  plotter.Values
+	Average, STDDEV   float64
+	Similarity        plotter.Values
+	AverageSimilarity []float64
+	Results           []TestResult
 }
 
 // Anomaly tests the anomaly detection algorithm
@@ -233,26 +243,26 @@ func Anomaly(seed int) *TestResults {
 		Cache:  make(map[uint64][]int8),
 		Source: NewLFSR32Source,
 	}
-	database, nearestNeighbor := make([][]float32, 0, Samples), make([]float64, Samples)
-	values, sims := make(plotter.Values, Samples), make(plotter.Values, Samples)
+	vectors, averageSimilarity := make([][]float32, 0, Samples), make([]float64, Samples)
+	autoencoderError, similarity := make(plotter.Values, Samples), make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
 		object := generateJSON(rnd)
 		hash := vectorizer.Hash(object)
 		normalized := normalize(hash)
 		input := adapt(normalized)
 
-		if length := len(database); length > 0 {
+		if length := len(vectors); length > 0 {
 			sum := 0.0
-			for _, v := range database {
-				sum += similarity(normalized, v) + 1
+			for _, v := range vectors {
+				sum += Similarity(normalized, v) + 1
 			}
-			nearestNeighbor[i] = sum / float64(length)
+			averageSimilarity[i] = sum / float64(length)
 		}
 
 		context.SetInput(input)
 		context.Infer()
 		outputs := context.GetOutput()
-		sims[i] = float64(similarity(input, outputs))
+		similarity[i] = float64(Similarity(input, outputs))
 
 		source := func(iterations int) [][][]float32 {
 			data := make([][][]float32, 1)
@@ -261,23 +271,22 @@ func Anomaly(seed int) *TestResults {
 		}
 		e := nn.Train(source, 1, 0.6, 0.4)
 		//e := nn.Train(source, 1, 0.1, 0.0001)
-		values[i] = float64(e[0])
-		database = append(database, normalized)
+		autoencoderError[i] = float64(e[0])
+		vectors = append(vectors, normalized)
 	}
-	values = values[Cutoff:]
-	sims = sims[Cutoff:]
+	autoencoderError = autoencoderError[Cutoff:]
+	similarity = similarity[Cutoff:]
 
-	sum, sumSquared, length := 0.0, 0.0, float64(len(values))
-	for _, v := range values {
+	sum, sumSquared, length := 0.0, 0.0, float64(len(autoencoderError))
+	for _, v := range autoencoderError {
 		value := float64(v)
 		sum += value
 		sumSquared += value * value
 	}
 	average := sum / length
 	stddev := math.Sqrt(sumSquared/length - average*average)
-	fmt.Printf("avg=%v stddev=%v\n", average, stddev)
 
-	surprise := make([]float64, len(tests))
+	results := make([]TestResult, len(tests))
 	for i, test := range tests {
 		var object map[string]interface{}
 		err := json.Unmarshal([]byte(test), &object)
@@ -291,8 +300,7 @@ func Anomaly(seed int) *TestResults {
 		context.SetInput(input)
 		context.Infer()
 		outputs := context.GetOutput()
-		sim := float64(similarity(input, outputs))
-		fmt.Printf("sim before=%v\n", sim)
+		results[i].SimilarityBefore = float64(Similarity(input, outputs))
 
 		source := func(iterations int) [][][]float32 {
 			data := make([][][]float32, 1)
@@ -301,27 +309,33 @@ func Anomaly(seed int) *TestResults {
 		}
 		e := nn.Train(source, 1, 0.6, 0.4)
 		//e := nn.Train(source, 1, 0.1, 0.0001)
-		surprise[i] = math.Abs((float64(e[0]) - average) / stddev)
-		fmt.Println(surprise[i])
+		results[i].Surprise = math.Abs((float64(e[0]) - average) / stddev)
 
 		context.SetInput(input)
 		context.Infer()
 		outputs = context.GetOutput()
-		sim = float64(similarity(input, outputs))
-		fmt.Printf("sim after=%v\n", sim)
+		results[i].SimilarityAfter = float64(Similarity(input, outputs))
 	}
 
 	return &TestResults{
-		Values:          values,
-		Sims:            sims,
-		NearestNeighbor: nearestNeighbor[Cutoff:],
-		Correct:         surprise[0] > surprise[1],
+		AutoencoderError:  autoencoderError,
+		Average:           average,
+		STDDEV:            stddev,
+		Similarity:        similarity,
+		AverageSimilarity: averageSimilarity[Cutoff:],
+		Results:           results,
 	}
+}
+
+// IsCorrect determines if a result is IsCorrect
+func (t *TestResults) IsCorrect() bool {
+	return t.Results[0].Surprise > t.Results[1].Surprise
 }
 
 // Process processes the results from Anomaly
 func (t *TestResults) Process() {
-	plotValues := func(title, name string, values plotter.Values) {
+	graph := 1
+	histogram := func(title, name string, values plotter.Values) {
 		p, err := plot.New()
 		if err != nil {
 			panic(err)
@@ -335,49 +349,70 @@ func (t *TestResults) Process() {
 		h.Normalize(1)
 		p.Add(h)
 
-		err = p.Save(8*vg.Inch, 8*vg.Inch, name)
+		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("graph_%v_%v", graph, name))
 		if err != nil {
 			panic(err)
 		}
-	}
-	plotValues("Output", "output.png", t.Values)
-	plotValues("Sims", "sims.png", t.Sims)
 
-	xys := make(plotter.XYs, len(t.Values))
-	for i, v := range t.NearestNeighbor {
+		graph++
+	}
+
+	histogram("Autoencoder Error Distribution", "autoencoder_error_distribution.png", t.AutoencoderError)
+	histogram("Similarity Distribution", "similarity_distribution.png", t.Similarity)
+
+	scatterPlot := func(xTitle, yTitle, name string, xys plotter.XYs) {
+		p, err := plot.New()
+		if err != nil {
+			panic(err)
+		}
+
+		p.Title.Text = yTitle + " vs " + xTitle
+		p.X.Label.Text = xTitle
+		p.Y.Label.Text = yTitle
+
+		s, err := plotter.NewScatter(xys)
+		if err != nil {
+			panic(err)
+		}
+		p.Add(s)
+
+		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("graph_%v_%v", graph, name))
+		if err != nil {
+			panic(err)
+		}
+
+		graph++
+
+		x, y, x2, y2, xy, n := 0.0, 0.0, 0.0, 0.0, 0.0, float64(len(xys))
+		for i := range xys {
+			x += xys[i].X
+			y += xys[i].Y
+			x2 += xys[i].X * xys[i].X
+			y2 += xys[i].Y * xys[i].Y
+			xy += xys[i].X * xys[i].Y
+		}
+		r := (n*xy - x*y) / (math.Sqrt(n*x2-x*x) * math.Sqrt(n*y2-y*y))
+		fmt.Printf("r=%v\n", r)
+	}
+
+	xys := make(plotter.XYs, len(t.AutoencoderError))
+	for i, v := range t.AverageSimilarity {
 		xys[i].X = v
-		xys[i].Y = t.Values[i]
+		xys[i].Y = t.AutoencoderError[i]
 	}
-	p, err := plot.New()
-	if err != nil {
-		panic(err)
-	}
+	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similairty.png", xys)
 
-	p.Title.Text = "Average Similarity vs Error"
-	p.X.Label.Text = "Average Similarity"
-	p.Y.Label.Text = "Autoencoder Error"
-
-	s, err := plotter.NewScatter(xys)
-	if err != nil {
-		panic(err)
+	for i, v := range t.AutoencoderError {
+		xys[i].X = float64(i)
+		xys[i].Y = v
 	}
-	p.Add(s)
+	scatterPlot("Time", "Autoencoder Error", "autoencoder_error.png", xys)
 
-	err = p.Save(8*vg.Inch, 8*vg.Inch, "correlate.png")
-	if err != nil {
-		panic(err)
+	for i, v := range t.AverageSimilarity {
+		xys[i].X = float64(i)
+		xys[i].Y = v
 	}
-
-	x, y, x2, y2, xy, n := 0.0, 0.0, 0.0, 0.0, 0.0, float64(len(xys))
-	for i := range xys {
-		x += xys[i].X
-		y += xys[i].Y
-		x2 += xys[i].X * xys[i].X
-		y2 += xys[i].Y * xys[i].Y
-		xy += xys[i].X * xys[i].Y
-	}
-	r := (n*xy - x*y) / (math.Sqrt(n*x2-x*x) * math.Sqrt(n*y2-y*y))
-	fmt.Printf("r=%v\n", r)
+	scatterPlot("Time", "Average Similarity", "average_similarity.png", xys)
 }
 
 var images = flag.Bool("images", false, "run images demo")
@@ -399,33 +434,29 @@ func main() {
 	result := Anomaly(1)
 	result.Process()
 
-	count, results, j := 0, make(chan bool, Parallelization), 1
-	for i := 0; i < Parallelization; i++ {
-		go func(j int) {
-			result := Anomaly(j)
-			results <- result.Correct
-		}(j)
-		j++
-	}
-	total := 0
-	for j <= Trials {
-		correct := <-results
-		if correct {
+	count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1
+	process := func() {
+		result := <-results
+		if result.IsCorrect() {
 			count++
 		}
 		total++
+	}
+	for i := 0; i < Parallelization; i++ {
 		go func(j int) {
-			result := Anomaly(j)
-			results <- result.Correct
+			results <- Anomaly(j)
+		}(j)
+		j++
+	}
+	for j <= Trials {
+		process()
+		go func(j int) {
+			results <- Anomaly(j)
 		}(j)
 		j++
 	}
 	for total < Trials {
-		correct := <-results
-		if correct {
-			count++
-		}
-		total++
+		process()
 	}
 	fmt.Printf("count=%v/%v\n", count, total)
 }
