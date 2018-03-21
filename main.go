@@ -29,6 +29,8 @@ const (
 	Trials = 100
 	// Parallelization is how many trials to perform in parallel
 	Parallelization = 10
+	// Cutoff is the number of initial samples to ignore
+	Cutoff = 100
 )
 
 var tests = []string{`{
@@ -174,8 +176,15 @@ func normalize(a []int64) []float32 {
 	sum = math.Sqrt(sum)
 	b := make([]float32, len(a))
 	for i, v := range a {
-		b[i] = sigmoid32(float32(v) / float32(sum))
-		//b[i] = float32(v) / float32(sum)
+		b[i] = float32(v) / float32(sum)
+	}
+	return b
+}
+
+func adapt(a []float32) []float32 {
+	b := make([]float32, len(a))
+	for i, v := range a {
+		b[i] = sigmoid32(v)
 	}
 	return b
 }
@@ -191,7 +200,15 @@ func similarity(a, b []float32) float64 {
 	return dot / math.Sqrt(xx*yy)
 }
 
-func anomaly(seed int) (values, sims plotter.Values, correct bool) {
+// TestResults are the test results from Anomaly
+type TestResults struct {
+	Values, Sims    plotter.Values
+	NearestNeighbor []float64
+	Correct         bool
+}
+
+// Anomaly tests the anomaly detection algorithm
+func Anomaly(seed int) *TestResults {
 	rnd := rand.New(rand.NewSource(int64(seed)))
 
 	config := func(n *neural.Neural32) {
@@ -216,11 +233,21 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 		Cache:  make(map[uint64][]int8),
 		Source: NewLFSR32Source,
 	}
-	values, sims = make(plotter.Values, Samples), make(plotter.Values, Samples)
+	database, nearestNeighbor := make([][]float32, 0, Samples), make([]float64, Samples)
+	values, sims := make(plotter.Values, Samples), make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
 		object := generateJSON(rnd)
 		hash := vectorizer.Hash(object)
-		input := normalize(hash)
+		normalized := normalize(hash)
+		input := adapt(normalized)
+
+		if length := len(database); length > 0 {
+			sum := 0.0
+			for _, v := range database {
+				sum += similarity(normalized, v) + 1
+			}
+			nearestNeighbor[i] = sum / float64(length)
+		}
 
 		context.SetInput(input)
 		context.Infer()
@@ -235,9 +262,10 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 		e := nn.Train(source, 1, 0.6, 0.4)
 		//e := nn.Train(source, 1, 0.1, 0.0001)
 		values[i] = float64(e[0])
+		database = append(database, normalized)
 	}
-	values = values[100:]
-	sims = sims[100:]
+	values = values[Cutoff:]
+	sims = sims[Cutoff:]
 
 	sum, sumSquared, length := 0.0, 0.0, float64(len(values))
 	for _, v := range values {
@@ -257,7 +285,8 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 			panic(err)
 		}
 		hash := vectorizer.Hash(object)
-		input := normalize(hash)
+		normalized := normalize(hash)
+		input := adapt(normalized)
 
 		context.SetInput(input)
 		context.Infer()
@@ -281,9 +310,74 @@ func anomaly(seed int) (values, sims plotter.Values, correct bool) {
 		sim = float64(similarity(input, outputs))
 		fmt.Printf("sim after=%v\n", sim)
 	}
-	correct = surprise[0] > surprise[1]
 
-	return
+	return &TestResults{
+		Values:          values,
+		Sims:            sims,
+		NearestNeighbor: nearestNeighbor[Cutoff:],
+		Correct:         surprise[0] > surprise[1],
+	}
+}
+
+// Process processes the results from Anomaly
+func (t *TestResults) Process() {
+	plotValues := func(title, name string, values plotter.Values) {
+		p, err := plot.New()
+		if err != nil {
+			panic(err)
+		}
+		p.Title.Text = title
+
+		h, err := plotter.NewHist(values[100:], 20)
+		if err != nil {
+			panic(err)
+		}
+		h.Normalize(1)
+		p.Add(h)
+
+		err = p.Save(8*vg.Inch, 8*vg.Inch, name)
+		if err != nil {
+			panic(err)
+		}
+	}
+	plotValues("Output", "output.png", t.Values)
+	plotValues("Sims", "sims.png", t.Sims)
+
+	xys := make(plotter.XYs, len(t.Values))
+	for i, v := range t.NearestNeighbor {
+		xys[i].X = v
+		xys[i].Y = t.Values[i]
+	}
+	p, err := plot.New()
+	if err != nil {
+		panic(err)
+	}
+
+	p.Title.Text = "Average Similarity vs Error"
+	p.X.Label.Text = "Average Similarity"
+	p.Y.Label.Text = "Autoencoder Error"
+
+	s, err := plotter.NewScatter(xys)
+	if err != nil {
+		panic(err)
+	}
+	p.Add(s)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "correlate.png")
+	if err != nil {
+		panic(err)
+	}
+
+	x, y, x2, y2, xy, n := 0.0, 0.0, 0.0, 0.0, 0.0, float64(len(xys))
+	for i := range xys {
+		x += xys[i].X
+		y += xys[i].Y
+		x2 += xys[i].X * xys[i].X
+		y2 += xys[i].Y * xys[i].Y
+		xy += xys[i].X * xys[i].Y
+	}
+	r := (n*xy - x*y) / (math.Sqrt(n*x2-x*x) * math.Sqrt(n*y2-y*y))
+	fmt.Printf("r=%v\n", r)
 }
 
 var images = flag.Bool("images", false, "run images demo")
@@ -302,34 +396,14 @@ func main() {
 		return
 	}
 
-	values, sims, _ := anomaly(1)
-	plot := func(title, name string, values plotter.Values) {
-		p, err := plot.New()
-		if err != nil {
-			panic(err)
-		}
-		p.Title.Text = title
-
-		h, err := plotter.NewHist(values, 20)
-		if err != nil {
-			panic(err)
-		}
-		h.Normalize(1)
-		p.Add(h)
-
-		err = p.Save(8*vg.Inch, 8*vg.Inch, name)
-		if err != nil {
-			panic(err)
-		}
-	}
-	plot("Output", "output.png", values)
-	plot("Sims", "sims.png", sims)
+	result := Anomaly(1)
+	result.Process()
 
 	count, results, j := 0, make(chan bool, Parallelization), 1
 	for i := 0; i < Parallelization; i++ {
 		go func(j int) {
-			_, _, correct := anomaly(j)
-			results <- correct
+			result := Anomaly(j)
+			results <- result.Correct
 		}(j)
 		j++
 	}
@@ -341,8 +415,8 @@ func main() {
 		}
 		total++
 		go func(j int) {
-			_, _, correct := anomaly(j)
-			results <- correct
+			result := Anomaly(j)
+			results <- result.Correct
 		}(j)
 		j++
 	}
