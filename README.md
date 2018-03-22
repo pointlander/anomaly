@@ -14,11 +14,11 @@ The typical approach for converting a document into a vector is to count words. 
 {
  "a": [
   {"a": "aa"},
-	{"b": "bb"}
+  {"b": "bb"}
  ],
  "b": [
   {"a": "aa"},
-	{"b": "bb"}
+  {"b": "bb"}
  ]
 }
 ```
@@ -56,11 +56,11 @@ As should be expected graph 1 appears to be gaussian. Another test implemented f
 {
  "alfa": [
   {"alfa": "1"},
-	{"bravo": "2"}
+  {"bravo": "2"}
  ],
  "bravo": [
   {"alfa": "3"},
-	{"bravo": "4"}
+  {"bravo": "4"}
  ]
 }
 ```
@@ -68,11 +68,11 @@ As should be expected graph 1 appears to be gaussian. Another test implemented f
 {
  "a": [
   {"a": "aa"},
-	{"b": "bb"}
+  {"b": "bb"}
  ],
  "b": [
   {"a": "aa"},
-	{"b": "bb"}
+  {"b": "bb"}
  ]
 }
 ```
