@@ -35,6 +35,7 @@ would be converted into the below 12 "words" using a recursive algorithm:
 10. b b bb
 11. b bb
 12. bb
+
 The 8 unique words are ["a a aa", "a aa", "aa", "a b bb", "b bb", "bb", "b a aa", "b b bb"], and their vector is [1, 2, 2, 1, 2, 2, 1, 1]. For all possible JSON documents the vector would be very large, so an algorithm is needed for compressing this vector.
 
 ### Random matrix dimensionality reduction
