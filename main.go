@@ -344,7 +344,7 @@ func (t *TestResults) Process() {
 		xys[i].X = v
 		xys[i].Y = t.AutoencoderError[i]
 	}
-	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similairty.png", xys)
+	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similarity.png", xys)
 
 	for i, v := range t.AutoencoderError {
 		xys[i].X = float64(i)
