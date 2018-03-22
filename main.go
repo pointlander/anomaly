@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"hash/fnv"
 	"math"
 	"math/rand"
 
@@ -19,8 +18,6 @@ import (
 )
 
 const (
-	// Symbols is the number of symbols to use for JSON generation
-	Symbols = 'z' - 'a'
 	// VectorSize is the size of the JSON document vector
 	VectorSize = 1024
 	// Samples is the number of JSON documents to generate per trial
@@ -33,7 +30,8 @@ const (
 	Cutoff = 100
 )
 
-var tests = []string{`{
+// Tests are basic tests for anomaly detection
+var Tests = []string{`{
  "alfa": [
   {"alfa": "1"},
 	{"bravo": "2"}
@@ -53,7 +51,8 @@ var tests = []string{`{
  ]
 }`}
 
-func generateJSON(rnd *rand.Rand) map[string]interface{} {
+// GenerateRandomJSON generates random JSON
+func GenerateRandomJSON(rnd *rand.Rand) map[string]interface{} {
 	sample := func(stddev float64) int {
 		return int(math.Abs(rnd.NormFloat64()) * stddev)
 	}
@@ -61,9 +60,10 @@ func generateJSON(rnd *rand.Rand) map[string]interface{} {
 		return sample(1) + 1
 	}
 	sampleName := func() string {
+		const symbols = 'z' - 'a'
 		s := sample(8)
-		if s > Symbols {
-			s = Symbols
+		if s > symbols {
+			s = symbols
 		}
 		return string('a' + s)
 	}
@@ -98,63 +98,6 @@ func generateJSON(rnd *rand.Rand) map[string]interface{} {
 	return object
 }
 
-func hash(a []string) uint64 {
-	h := fnv.New64()
-	for _, s := range a {
-		h.Write([]byte(s))
-	}
-	return h.Sum64()
-}
-
-// Vectorizer converts JSON documents to vectors
-type Vectorizer struct {
-	Cache  map[uint64][]int8
-	Source func(seed uint64) Source
-}
-
-// Lookup looks a vector up
-func (v *Vectorizer) Lookup(a []string) []int8 {
-	h := hash(a)
-	transform, found := v.Cache[h]
-	if found {
-		return transform
-	}
-	transform = make([]int8, VectorSize)
-	rnd := v.Source(h)
-	for i := range transform {
-		transform[i] = rnd.Int()
-	}
-	v.Cache[h] = transform
-	return transform
-}
-
-// Hash produces a vector from a JSON object
-func (v *Vectorizer) Hash(object map[string]interface{}) []int64 {
-	hash := make([]int64, VectorSize)
-	var process func(object map[string]interface{}, context []string)
-	process = func(object map[string]interface{}, context []string) {
-		for k, val := range object {
-			sub := append(context, k)
-			switch value := val.(type) {
-			case []interface{}:
-				for _, i := range value {
-					process(i.(map[string]interface{}), sub)
-				}
-			case string:
-				sub = append(sub, value)
-				for i := range sub {
-					transform := v.Lookup(sub[i:])
-					for x, y := range transform {
-						hash[x] += int64(y)
-					}
-				}
-			}
-		}
-	}
-	process(object, make([]string, 0))
-	return hash
-}
-
 func sigmoid32(x float32) float32 {
 	return 1 / (1 + float32(math.Exp(-float64(x))))
 }
@@ -168,7 +111,8 @@ func dtanh32(x float32) float32 {
 	return 1 - x*x
 }
 
-func normalize(a []int64) []float32 {
+// Normalize converts a vector to a unit vector
+func Normalize(a []int64) []float32 {
 	sum := 0.0
 	for _, v := range a {
 		sum += float64(v) * float64(v)
@@ -181,7 +125,8 @@ func normalize(a []int64) []float32 {
 	return b
 }
 
-func adapt(a []float32) []float32 {
+// Adapt prepares a vector for input into a neural network
+func Adapt(a []float32) []float32 {
 	b := make([]float32, len(a))
 	for i, v := range a {
 		b[i] = sigmoid32(v)
@@ -190,6 +135,7 @@ func adapt(a []float32) []float32 {
 }
 
 // Similarity computes the cosine similarity between two vectors
+// https://en.wikipedia.org/wiki/Cosine_similarity
 func Similarity(a, b []float32) float64 {
 	dot, xx, yy := 0.0, 0.0, 0.0
 	for i, j := range b {
@@ -210,6 +156,7 @@ type TestResult struct {
 
 // TestResults are the test results from Anomaly
 type TestResults struct {
+	Seed              int
 	AutoencoderError  plotter.Values
 	Average, STDDEV   float64
 	Similarity        plotter.Values
@@ -239,22 +186,19 @@ func Anomaly(seed int) *TestResults {
 	}
 	nn := neural.NewNeural32(config)
 	context := nn.NewContext()
-	vectorizer := &Vectorizer{
-		Cache:  make(map[uint64][]int8),
-		Source: NewLFSR32Source,
-	}
+	vectorizer := NewVectorizer(NewLFSR32Source)
 	vectors, averageSimilarity := make([][]float32, 0, Samples), make([]float64, Samples)
 	autoencoderError, similarity := make(plotter.Values, Samples), make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
-		object := generateJSON(rnd)
-		hash := vectorizer.Hash(object)
-		normalized := normalize(hash)
-		input := adapt(normalized)
+		object := GenerateRandomJSON(rnd)
+		vector := vectorizer.Vectorize(object)
+		unit := Normalize(vector)
+		input := Adapt(unit)
 
 		if length := len(vectors); length > 0 {
 			sum := 0.0
 			for _, v := range vectors {
-				sum += Similarity(normalized, v) + 1
+				sum += Similarity(unit, v) + 1
 			}
 			averageSimilarity[i] = sum / float64(length)
 		}
@@ -272,7 +216,7 @@ func Anomaly(seed int) *TestResults {
 		e := nn.Train(source, 1, 0.6, 0.4)
 		//e := nn.Train(source, 1, 0.1, 0.0001)
 		autoencoderError[i] = float64(e[0])
-		vectors = append(vectors, normalized)
+		vectors = append(vectors, unit)
 	}
 	autoencoderError = autoencoderError[Cutoff:]
 	similarity = similarity[Cutoff:]
@@ -286,16 +230,16 @@ func Anomaly(seed int) *TestResults {
 	average := sum / length
 	stddev := math.Sqrt(sumSquared/length - average*average)
 
-	results := make([]TestResult, len(tests))
-	for i, test := range tests {
+	results := make([]TestResult, len(Tests))
+	for i, test := range Tests {
 		var object map[string]interface{}
 		err := json.Unmarshal([]byte(test), &object)
 		if err != nil {
 			panic(err)
 		}
-		hash := vectorizer.Hash(object)
-		normalized := normalize(hash)
-		input := adapt(normalized)
+		vector := vectorizer.Vectorize(object)
+		unit := Normalize(vector)
+		input := Adapt(unit)
 
 		context.SetInput(input)
 		context.Infer()
@@ -318,6 +262,7 @@ func Anomaly(seed int) *TestResults {
 	}
 
 	return &TestResults{
+		Seed:              seed,
 		AutoencoderError:  autoencoderError,
 		Average:           average,
 		STDDEV:            stddev,
@@ -361,12 +306,22 @@ func (t *TestResults) Process() {
 	histogram("Similarity Distribution", "similarity_distribution.png", t.Similarity)
 
 	scatterPlot := func(xTitle, yTitle, name string, xys plotter.XYs) {
+		x, y, x2, y2, xy, n := 0.0, 0.0, 0.0, 0.0, 0.0, float64(len(xys))
+		for i := range xys {
+			x += xys[i].X
+			y += xys[i].Y
+			x2 += xys[i].X * xys[i].X
+			y2 += xys[i].Y * xys[i].Y
+			xy += xys[i].X * xys[i].Y
+		}
+		corr := (n*xy - x*y) / (math.Sqrt(n*x2-x*x) * math.Sqrt(n*y2-y*y))
+
 		p, err := plot.New()
 		if err != nil {
 			panic(err)
 		}
 
-		p.Title.Text = yTitle + " vs " + xTitle
+		p.Title.Text = fmt.Sprintf("%v vs %v corr=%v", yTitle, xTitle, corr)
 		p.X.Label.Text = xTitle
 		p.Y.Label.Text = yTitle
 
@@ -382,17 +337,6 @@ func (t *TestResults) Process() {
 		}
 
 		graph++
-
-		x, y, x2, y2, xy, n := 0.0, 0.0, 0.0, 0.0, 0.0, float64(len(xys))
-		for i := range xys {
-			x += xys[i].X
-			y += xys[i].Y
-			x2 += xys[i].X * xys[i].X
-			y2 += xys[i].Y * xys[i].Y
-			xy += xys[i].X * xys[i].Y
-		}
-		r := (n*xy - x*y) / (math.Sqrt(n*x2-x*x) * math.Sqrt(n*y2-y*y))
-		fmt.Printf("r=%v\n", r)
 	}
 
 	xys := make(plotter.XYs, len(t.AutoencoderError))
@@ -415,6 +359,12 @@ func (t *TestResults) Process() {
 	scatterPlot("Time", "Average Similarity", "average_similarity.png", xys)
 }
 
+// Print prints test results
+func (t *TestResults) Print() {
+	results := t.Results
+	fmt.Printf("%v %v %v\n", t.Seed, results[0].Surprise, results[1].Surprise)
+}
+
 var images = flag.Bool("images", false, "run images demo")
 var lfsr = flag.Bool("lfsr", false, "run lfsr")
 
@@ -433,10 +383,12 @@ func main() {
 
 	result := Anomaly(1)
 	result.Process()
+	result.Print()
 
 	count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1
 	process := func() {
 		result := <-results
+		result.Print()
 		if result.IsCorrect() {
 			count++
 		}

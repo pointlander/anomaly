@@ -28,30 +28,24 @@ func BenchmarkSource(b *testing.B) {
 
 func BenchmarkVectorizer(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	vectorizer := &Vectorizer{
-		Cache:  make(map[uint64][]int8),
-		Source: NewRandSource,
-	}
+	vectorizer := NewVectorizer(NewRandSource)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
-		object := generateJSON(rnd)
+		object := GenerateRandomJSON(rnd)
 		b.StartTimer()
-		vectorizer.Hash(object)
+		vectorizer.Vectorize(object)
 	}
 }
 
 func BenchmarkVectorizerLFSR(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	vectorizer := &Vectorizer{
-		Cache:  make(map[uint64][]int8),
-		Source: NewLFSR32Source,
-	}
+	vectorizer := NewVectorizer(NewLFSR32Source)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
-		object := generateJSON(rnd)
+		object := GenerateRandomJSON(rnd)
 		b.StartTimer()
-		vectorizer.Hash(object)
+		vectorizer.Vectorize(object)
 	}
 }

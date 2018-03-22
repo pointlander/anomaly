@@ -22,6 +22,9 @@ type Source interface {
 	Int() int8
 }
 
+// SourceFactory generates new random number sources
+type SourceFactory func(seed uint64) Source
+
 // https://en.wikipedia.org/wiki/Linear-feedback_shift_register
 // https://users.ece.cmu.edu/~koopman/lfsr/index.html
 func searchLFSR32() {
