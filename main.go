@@ -186,7 +186,7 @@ func Anomaly(seed int) *TestResults {
 	}
 	nn := neural.NewNeural32(config)
 	context := nn.NewContext()
-	vectorizer := NewVectorizer(NewLFSR32Source)
+	vectorizer := NewVectorizer(true, NewLFSR32Source)
 	vectors, averageSimilarity := make([][]float32, 0, Samples), make([]float64, Samples)
 	autoencoderError, similarity := make(plotter.Values, Samples), make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
