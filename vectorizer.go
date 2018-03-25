@@ -24,7 +24,7 @@ type Vectorizer struct {
 func NewVectorizer(useCache bool, source SourceFactory) *Vectorizer {
 	return &Vectorizer{
 		UseCache:          useCache,
-		MatrixColumnCache: make(map[uint64][]int8),
+		MatrixColumnCache: make(map[uint64][]int8, 256),
 		Source:            source,
 	}
 }
@@ -105,6 +105,6 @@ func (v *Vectorizer) Vectorize(object map[string]interface{}) []int64 {
 			}
 		}
 	}
-	process(object, make([]string, 0))
+	process(object, make([]string, 0, 256))
 	return vector
 }
