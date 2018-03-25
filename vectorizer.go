@@ -5,6 +5,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"hash/fnv"
 	"sync"
 )
@@ -35,7 +37,7 @@ func hash(a []string) uint64 {
 	return h.Sum64()
 }
 
-// GetMatrixColumn finds or generates a matrix column and adds it to a vector
+// AddMatrixColumn finds or generates a matrix column and adds it to a vector
 func (v *Vectorizer) AddMatrixColumn(a []string, b []int64) {
 	h := hash(a)
 	if !v.UseCache {
@@ -72,18 +74,34 @@ func (v *Vectorizer) Vectorize(object map[string]interface{}) []int64 {
 	vector := make([]int64, VectorSize)
 	var process func(object map[string]interface{}, context []string)
 	process = func(object map[string]interface{}, context []string) {
-		for k, val := range object {
-			sub := append(context, k)
-			switch value := val.(type) {
+		for key, value := range object {
+			sub := append(context, key)
+			sum := func(value string) {
+				subvalue := append(sub, value)
+				for i := range subvalue {
+					v.AddMatrixColumn(subvalue[i:], vector)
+				}
+			}
+			switch value := value.(type) {
 			case []interface{}:
-				for _, i := range value {
-					process(i.(map[string]interface{}), sub)
+				for _, value := range value {
+					switch value := value.(type) {
+					case map[string]interface{}:
+						process(value, sub)
+					case string:
+						sum(value)
+					case float64:
+						sum(fmt.Sprintf("%f", value))
+					case json.Number:
+						sum(value.String())
+					}
 				}
 			case string:
-				sub = append(sub, value)
-				for i := range sub {
-					v.AddMatrixColumn(sub[i:], vector)
-				}
+				sum(value)
+			case float64:
+				sum(fmt.Sprintf("%f", value))
+			case json.Number:
+				sum(value.String())
 			}
 		}
 	}
