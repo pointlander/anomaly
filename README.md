@@ -1,5 +1,11 @@
 # Anomaly detection for JSON documents
 
+## Organization
+* cmd/anomaly_bench - Anomaly detection for JSON documents prototype code
+* cmd/anomaly_image - Anomaly detection for images
+* cmd/search_lfsr - Code for finding maximal length lfsr
+* images - Test images for anomaly_image
+
 ## Abstract
 Standard statistical methods can be used for anomaly detection of one dimensional real valued data. The multidimensional nature of JSON documents makes anomaly detection more difficult. This README proposes a two stage algorithm for the anomaly detection of JSON documents. The first stage of the algorithm uses [random matrix dimensionality reduction](ttps://en.wikipedia.org/wiki/Random_projectio) to vectorize a JSON document into a fixed length vector (JSON document vector). The second stage of the algorithm uses a neural network [autoencoder](https://en.wikipedia.org/wiki/Autoencoder) to determine how surprising (autoencoder error) the JSON document vector is. Simple statistical analysis can then be used for determining which JSON documents the user should be alerted to.
 
