@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package anomaly
 
 import (
-	"fmt"
 	"math"
 	"math/rand"
 )
@@ -24,29 +23,6 @@ type Source interface {
 
 // SourceFactory generates new random number sources
 type SourceFactory func(seed uint64) Source
-
-// https://en.wikipedia.org/wiki/Linear-feedback_shift_register
-// https://users.ece.cmu.edu/~koopman/lfsr/index.html
-func searchLFSR32() {
-	count, polynomial := 0, uint32(0x80000000)
-	for polynomial != 0 {
-		lfsr, period := uint32(1), 0
-		for {
-			lfsr = (lfsr >> 1) ^ (-(lfsr & 1) & polynomial)
-			period++
-			if lfsr == 1 {
-				break
-			}
-		}
-		fmt.Printf("%v period=%v\n", count, period)
-		if period == math.MaxUint32 {
-			fmt.Printf("%x\n", polynomial)
-			return
-		}
-		count++
-		polynomial++
-	}
-}
 
 // LFSR32 is a 32 bit linear feedback shift register
 type LFSR32 uint32

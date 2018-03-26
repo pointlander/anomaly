@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package anomaly
 
 import (
 	"math/rand"
@@ -28,7 +28,7 @@ func BenchmarkSource(b *testing.B) {
 
 func BenchmarkVectorizer(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	vectorizer := NewVectorizer(true, NewRandSource)
+	vectorizer := NewVectorizer(1024, true, NewRandSource)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
@@ -40,7 +40,7 @@ func BenchmarkVectorizer(b *testing.B) {
 
 func BenchmarkVectorizerLFSR(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	vectorizer := NewVectorizer(true, NewLFSR32Source)
+	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
@@ -52,7 +52,7 @@ func BenchmarkVectorizerLFSR(b *testing.B) {
 
 func BenchmarkVectorizerNoCache(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	vectorizer := NewVectorizer(false, NewRandSource)
+	vectorizer := NewVectorizer(1024, false, NewRandSource)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
@@ -64,7 +64,7 @@ func BenchmarkVectorizerNoCache(b *testing.B) {
 
 func BenchmarkVectorizerLFSRNoCache(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	vectorizer := NewVectorizer(false, NewLFSR32Source)
+	vectorizer := NewVectorizer(1024, false, NewLFSR32Source)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()

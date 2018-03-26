@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package main
+package anomaly
 
 import (
 	"encoding/json"
@@ -13,6 +13,7 @@ import (
 
 // Vectorizer converts JSON documents to vectors
 type Vectorizer struct {
+	Size              int
 	UseCache          bool
 	MatrixColumnCache map[uint64][]int8
 	Source            SourceFactory
@@ -21,8 +22,9 @@ type Vectorizer struct {
 
 // NewVectorizer creates a new vectorizer
 // https://en.wikipedia.org/wiki/Random_projection
-func NewVectorizer(useCache bool, source SourceFactory) *Vectorizer {
+func NewVectorizer(size int, useCache bool, source SourceFactory) *Vectorizer {
 	return &Vectorizer{
+		Size:              size,
 		UseCache:          useCache,
 		MatrixColumnCache: make(map[uint64][]int8, 256),
 		Source:            source,
@@ -57,7 +59,7 @@ func (v *Vectorizer) AddMatrixColumn(a []string, b []int64) {
 		}
 		return
 	}
-	transform = make([]int8, VectorSize)
+	transform = make([]int8, v.Size)
 	rnd := v.Source(h)
 	for i := range transform {
 		x := rnd.Int()
@@ -71,7 +73,7 @@ func (v *Vectorizer) AddMatrixColumn(a []string, b []int64) {
 
 // Vectorize produces a vector from a JSON object
 func (v *Vectorizer) Vectorize(object map[string]interface{}) []int64 {
-	vector := make([]int64, VectorSize)
+	vector := make([]int64, v.Size)
 	var process func(object map[string]interface{}, context []string)
 	process = func(object map[string]interface{}, context []string) {
 		for key, value := range object {

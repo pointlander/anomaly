@@ -6,7 +6,6 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"math"
 	"math/rand"
@@ -15,6 +14,8 @@ import (
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/vg"
+
+	"github.com/pointlander/anomaly"
 )
 
 const (
@@ -51,57 +52,6 @@ var Tests = []string{`{
  ]
 }`}
 
-// GenerateRandomJSON generates random JSON
-func GenerateRandomJSON(rnd *rand.Rand) map[string]interface{} {
-	sample := func(stddev float64) int {
-		return int(math.Abs(rnd.NormFloat64()) * stddev)
-	}
-	sampleCount := func() int {
-		return sample(1) + 1
-	}
-	sampleName := func() string {
-		const symbols = 'z' - 'a'
-		s := sample(8)
-		if s > symbols {
-			s = symbols
-		}
-		return string('a' + s)
-	}
-	sampleValue := func() string {
-		value := sampleName()
-		return value + value
-	}
-	sampleDepth := func() int {
-		return sample(3)
-	}
-	var generate func(hash map[string]interface{}, depth int)
-	generate = func(hash map[string]interface{}, depth int) {
-		count := sampleCount()
-		if depth > sampleDepth() {
-			for i := 0; i < count; i++ {
-				hash[sampleName()] = sampleValue()
-			}
-			return
-		}
-		for i := 0; i < count; i++ {
-			array := make([]interface{}, sampleCount())
-			for j := range array {
-				sub := make(map[string]interface{})
-				generate(sub, depth+1)
-				array[j] = sub
-			}
-			hash[sampleName()] = array
-		}
-	}
-	object := make(map[string]interface{})
-	generate(object, 0)
-	return object
-}
-
-func sigmoid32(x float32) float32 {
-	return 1 / (1 + float32(math.Exp(-float64(x))))
-}
-
 func tanh32(x float32) float32 {
 	a, b := math.Exp(float64(x)), math.Exp(-float64(x))
 	return float32((a - b) / (a + b))
@@ -109,42 +59,6 @@ func tanh32(x float32) float32 {
 
 func dtanh32(x float32) float32 {
 	return 1 - x*x
-}
-
-// Normalize converts a vector to a unit vector
-func Normalize(a []int64) []float32 {
-	sum := 0.0
-	for _, v := range a {
-		sum += float64(v) * float64(v)
-	}
-	sum = math.Sqrt(sum)
-	b := make([]float32, len(a))
-	for i, v := range a {
-		b[i] = float32(v) / float32(sum)
-	}
-	return b
-}
-
-// Adapt prepares a vector for input into a neural network
-func Adapt(a []float32) []float32 {
-	b := make([]float32, len(a))
-	for i, v := range a {
-		b[i] = sigmoid32(v)
-	}
-	return b
-}
-
-// Similarity computes the cosine similarity between two vectors
-// https://en.wikipedia.org/wiki/Cosine_similarity
-func Similarity(a, b []float32) float64 {
-	dot, xx, yy := 0.0, 0.0, 0.0
-	for i, j := range b {
-		x, y := float64(a[i]), float64(j)
-		dot += x * y
-		xx += x * x
-		yy += y * y
-	}
-	return dot / math.Sqrt(xx*yy)
 }
 
 // TestResult is a test result
@@ -186,19 +100,19 @@ func Anomaly(seed int) *TestResults {
 	}
 	nn := neural.NewNeural32(config)
 	context := nn.NewContext()
-	vectorizer := NewVectorizer(true, NewLFSR32Source)
+	vectorizer := anomaly.NewVectorizer(VectorSize, true, anomaly.NewLFSR32Source)
 	vectors, averageSimilarity := make([][]float32, 0, Samples), make([]float64, Samples)
 	autoencoderError, similarity := make(plotter.Values, Samples), make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
-		object := GenerateRandomJSON(rnd)
+		object := anomaly.GenerateRandomJSON(rnd)
 		vector := vectorizer.Vectorize(object)
-		unit := Normalize(vector)
-		input := Adapt(unit)
+		unit := anomaly.Normalize(vector)
+		input := anomaly.Adapt(unit)
 
 		if length := len(vectors); length > 0 {
 			sum := 0.0
 			for _, v := range vectors {
-				sum += Similarity(unit, v) + 1
+				sum += anomaly.Similarity(unit, v) + 1
 			}
 			averageSimilarity[i] = sum / float64(length)
 		}
@@ -206,7 +120,7 @@ func Anomaly(seed int) *TestResults {
 		context.SetInput(input)
 		context.Infer()
 		outputs := context.GetOutput()
-		similarity[i] = float64(Similarity(input, outputs))
+		similarity[i] = float64(anomaly.Similarity(input, outputs))
 
 		source := func(iterations int) [][][]float32 {
 			data := make([][][]float32, 1)
@@ -238,13 +152,13 @@ func Anomaly(seed int) *TestResults {
 			panic(err)
 		}
 		vector := vectorizer.Vectorize(object)
-		unit := Normalize(vector)
-		input := Adapt(unit)
+		unit := anomaly.Normalize(vector)
+		input := anomaly.Adapt(unit)
 
 		context.SetInput(input)
 		context.Infer()
 		outputs := context.GetOutput()
-		results[i].SimilarityBefore = float64(Similarity(input, outputs))
+		results[i].SimilarityBefore = float64(anomaly.Similarity(input, outputs))
 
 		source := func(iterations int) [][][]float32 {
 			data := make([][][]float32, 1)
@@ -258,7 +172,7 @@ func Anomaly(seed int) *TestResults {
 		context.SetInput(input)
 		context.Infer()
 		outputs = context.GetOutput()
-		results[i].SimilarityAfter = float64(Similarity(input, outputs))
+		results[i].SimilarityAfter = float64(anomaly.Similarity(input, outputs))
 	}
 
 	return &TestResults{
@@ -365,22 +279,7 @@ func (t *TestResults) Print() {
 	fmt.Printf("%v %v %v\n", t.Seed, results[0].Surprise, results[1].Surprise)
 }
 
-var images = flag.Bool("images", false, "run images demo")
-var lfsr = flag.Bool("lfsr", false, "run lfsr")
-
 func main() {
-	flag.Parse()
-
-	if *images {
-		imagesDemo()
-		return
-	}
-
-	if *lfsr {
-		searchLFSR32()
-		return
-	}
-
 	result := Anomaly(1)
 	result.Process()
 	result.Print()
