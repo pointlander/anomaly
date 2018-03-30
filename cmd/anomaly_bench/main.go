@@ -64,6 +64,7 @@ func dtanh32(x float32) float32 {
 // TestResult is a test result
 type TestResult struct {
 	Surprise         float64
+	Sim              float64
 	SimilarityBefore float64
 	SimilarityAfter  float64
 }
@@ -75,7 +76,20 @@ type TestResults struct {
 	Average, STDDEV   float64
 	Similarity        plotter.Values
 	AverageSimilarity []float64
+	Sim               plotter.Values
 	Results           []TestResult
+}
+
+func statistics(values plotter.Values) (average, stddev float64) {
+	sum, sumSquared, length := 0.0, 0.0, float64(len(values))
+	for _, v := range values {
+		value := float64(v)
+		sum += value
+		sumSquared += value * value
+	}
+	average = sum / length
+	stddev = math.Sqrt(sumSquared/length - average*average)
+	return
 }
 
 // Anomaly tests the anomaly detection algorithm
@@ -103,6 +117,8 @@ func Anomaly(seed int) *TestResults {
 	vectorizer := anomaly.NewVectorizer(VectorSize, true, anomaly.NewLFSR32Source)
 	vectors, averageSimilarity := make([][]float32, 0, Samples), make([]float64, Samples)
 	autoencoderError, similarity := make(plotter.Values, Samples), make(plotter.Values, Samples)
+	sim := make(plotter.Values, Samples)
+	neuron := anomaly.NewNeuron(VectorSize, rnd)
 	for i := 0; i < Samples; i++ {
 		object := anomaly.GenerateRandomJSON(rnd)
 		vector := vectorizer.Vectorize(object)
@@ -130,19 +146,15 @@ func Anomaly(seed int) *TestResults {
 		e := nn.Train(source, 1, 0.6, 0.4)
 		//e := nn.Train(source, 1, 0.1, 0.0001)
 		autoencoderError[i] = float64(e[0])
+		sim[i] = float64(neuron.Train(unit))
 		vectors = append(vectors, unit)
 	}
 	autoencoderError = autoencoderError[Cutoff:]
 	similarity = similarity[Cutoff:]
+	sim = sim[Cutoff:]
 
-	sum, sumSquared, length := 0.0, 0.0, float64(len(autoencoderError))
-	for _, v := range autoencoderError {
-		value := float64(v)
-		sum += value
-		sumSquared += value * value
-	}
-	average := sum / length
-	stddev := math.Sqrt(sumSquared/length - average*average)
+	average, stddev := statistics(autoencoderError)
+	simaverage, simstddev := statistics(sim)
 
 	results := make([]TestResult, len(Tests))
 	for i, test := range Tests {
@@ -168,6 +180,7 @@ func Anomaly(seed int) *TestResults {
 		e := nn.Train(source, 1, 0.6, 0.4)
 		//e := nn.Train(source, 1, 0.1, 0.0001)
 		results[i].Surprise = math.Abs((float64(e[0]) - average) / stddev)
+		results[i].Sim = math.Abs((float64(neuron.Train(unit)) - simaverage) / simstddev)
 
 		context.SetInput(input)
 		context.Infer()
@@ -182,6 +195,7 @@ func Anomaly(seed int) *TestResults {
 		STDDEV:            stddev,
 		Similarity:        similarity,
 		AverageSimilarity: averageSimilarity[Cutoff:],
+		Sim:               sim,
 		Results:           results,
 	}
 }
@@ -189,6 +203,11 @@ func Anomaly(seed int) *TestResults {
 // IsCorrect determines if a result is IsCorrect
 func (t *TestResults) IsCorrect() bool {
 	return t.Results[0].Surprise > t.Results[1].Surprise
+}
+
+// IsSimCorrect determines if a result is IsCorrect
+func (t *TestResults) IsSimCorrect() bool {
+	return t.Results[0].Sim > t.Results[1].Sim
 }
 
 // Process processes the results from Anomaly
@@ -271,12 +290,18 @@ func (t *TestResults) Process() {
 		xys[i].Y = v
 	}
 	scatterPlot("Time", "Average Similarity", "average_similarity.png", xys)
+
+	for i, v := range t.Sim {
+		xys[i].X = v
+		xys[i].Y = t.AutoencoderError[i]
+	}
+	scatterPlot("Similarity", "Autoencoder Error", "sim.png", xys)
 }
 
 // Print prints test results
 func (t *TestResults) Print() {
 	results := t.Results
-	fmt.Printf("%v %v %v\n", t.Seed, results[0].Surprise, results[1].Surprise)
+	fmt.Printf("%v %v %v %v %v\n", t.Seed, results[0].Surprise, results[1].Surprise, results[0].Sim, results[1].Sim)
 }
 
 func main() {
@@ -284,12 +309,15 @@ func main() {
 	result.Process()
 	result.Print()
 
-	count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1
+	count, simcount, total, results, j := 0, 0, 0, make(chan *TestResults, Parallelization), 1
 	process := func() {
 		result := <-results
 		result.Print()
 		if result.IsCorrect() {
 			count++
+		}
+		if result.IsSimCorrect() {
+			simcount++
 		}
 		total++
 	}
@@ -309,5 +337,5 @@ func main() {
 	for total < Trials {
 		process()
 	}
-	fmt.Printf("count=%v/%v\n", count, total)
+	fmt.Printf("count=%v %v / %v\n", count, simcount, total)
 }
