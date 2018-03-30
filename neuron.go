@@ -77,5 +77,5 @@ func (n *Neuron) Train(input []float32) float32 {
 		panic(err)
 	}
 
-	return cs
+	return float32(math.Abs(float64(cs)))
 }
