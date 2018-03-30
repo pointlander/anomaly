@@ -19,7 +19,7 @@ type Neuron struct {
 }
 
 // NewNeuron creates a new neuron
-func NewNeuron(width int, rnd *rand.Rand) *Neuron {
+func NewNeuron(width int, rnd *rand.Rand) Network {
 	ii := tensor.NewDense(tensor.Float32, tensor.Shape{width})
 	ww := tensor.NewDense(tensor.Float32, tensor.Shape{width})
 
