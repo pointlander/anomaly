@@ -139,14 +139,14 @@ func (t *TestResults) Print() {
 func main() {
 	graph := 1
 
-	histogram := func(title, name string, values plotter.Values) {
+	histogram := func(title, name string, values *TestResults) {
 		p, err := plot.New()
 		if err != nil {
 			panic(err)
 		}
 		p.Title.Text = title
 
-		h, err := plotter.NewHist(values, 20)
+		h, err := plotter.NewHist(values.Surprise, 20)
 		if err != nil {
 			panic(err)
 		}
@@ -161,7 +161,20 @@ func main() {
 		graph++
 	}
 
-	scatterPlot := func(xTitle, yTitle, name string, xys plotter.XYs) {
+	scatterPlot := func(xTitle, yTitle, name string, xx, yy *TestResults) {
+		xys := make(plotter.XYs, len(yy.Surprise))
+		if xx == nil {
+			for i, v := range yy.Surprise {
+				xys[i].X = float64(i)
+				xys[i].Y = v
+			}
+		} else {
+			for i, v := range yy.Surprise {
+				xys[i].X = xx.Surprise[i]
+				xys[i].Y = v
+			}
+		}
+
 		x, y, x2, y2, xy, n := 0.0, 0.0, 0.0, 0.0, 0.0, float64(len(xys))
 		for i := range xys {
 			x += xys[i].X
@@ -195,43 +208,24 @@ func main() {
 		graph++
 	}
 
-	averageSimilarityResult := Anomaly(1, anomaly.NewAverageSimilarity)
-	histogram("Average Similarity Distribution", "average_similarity_distribution.png", averageSimilarityResult.Surprise)
-	xys := make(plotter.XYs, len(averageSimilarityResult.Surprise))
-	for i, v := range averageSimilarityResult.Surprise {
-		xys[i].X = float64(i)
-		xys[i].Y = v
-	}
-	scatterPlot("Time", "Average Similarity", "average_similarity.png", xys)
-	averageSimilarityResult.Print()
+	averageSimilarity := Anomaly(1, anomaly.NewAverageSimilarity)
+	histogram("Average Similarity Distribution", "average_similarity_distribution.png", averageSimilarity)
+	scatterPlot("Time", "Average Similarity", "average_similarity.png", nil, averageSimilarity)
+	averageSimilarity.Print()
 
-	autoencoderErrorResult := Anomaly(1, anomaly.NewAutoencoder)
-	histogram("Autoencoder Error Distribution", "autoencoder_error_distribution.png", autoencoderErrorResult.Surprise)
-	for i, v := range autoencoderErrorResult.Surprise {
-		xys[i].X = float64(i)
-		xys[i].Y = v
-	}
-	scatterPlot("Time", "Autoencoder Error", "autoencoder_error.png", xys)
-	for i, v := range averageSimilarityResult.Surprise {
-		xys[i].X = v
-		xys[i].Y = autoencoderErrorResult.Surprise[i]
-	}
-	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similarity.png", xys)
-	autoencoderErrorResult.Print()
+	autoencoderError := Anomaly(1, anomaly.NewAutoencoder)
+	histogram("Autoencoder Error Distribution", "autoencoder_error_distribution.png", autoencoderError)
+	scatterPlot("Time", "Autoencoder Error", "autoencoder_error.png", nil, autoencoderError)
+	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similarity.png",
+		averageSimilarity, autoencoderError)
+	autoencoderError.Print()
 
-	neuronResult := Anomaly(1, anomaly.NewNeuron)
-	histogram("Neuron Distribution", "neuron_distribution.png", neuronResult.Surprise)
-	for i, v := range neuronResult.Surprise {
-		xys[i].X = float64(i)
-		xys[i].Y = v
-	}
-	scatterPlot("Time", "Neuron", "neuron.png", xys)
-	for i, v := range averageSimilarityResult.Surprise {
-		xys[i].X = v
-		xys[i].Y = neuronResult.Surprise[i]
-	}
-	scatterPlot("Average Similarity", "Neuron", "neuron_vs_average_similarity.png", xys)
-	neuronResult.Print()
+	neuron := Anomaly(1, anomaly.NewNeuron)
+	histogram("Neuron Distribution", "neuron_distribution.png", neuron)
+	scatterPlot("Time", "Neuron", "neuron.png", nil, neuron)
+	scatterPlot("Average Similarity", "Neuron", "neuron_vs_average_similarity.png",
+		averageSimilarity, neuron)
+	neuron.Print()
 
 	test := func(factory anomaly.NetworkFactory) {
 		count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1
