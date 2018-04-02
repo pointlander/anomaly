@@ -7,13 +7,13 @@
 * images - Test images for anomaly_image
 
 ## Abstract
-Standard statistical methods can be used for anomaly detection of one dimensional real valued data. The multidimensional nature of JSON documents makes anomaly detection more difficult. This README proposes a two stage algorithm for the anomaly detection of JSON documents. The first stage of the algorithm uses [random matrix dimensionality reduction](ttps://en.wikipedia.org/wiki/Random_projectio) to vectorize a JSON document into a fixed length vector (JSON document vector). The second stage of the algorithm uses a neural network [autoencoder](https://en.wikipedia.org/wiki/Autoencoder) to determine how surprising (autoencoder error) the JSON document vector is. Simple statistical analysis can then be used for determining which JSON documents the user should be alerted to.
+Standard statistical methods can be used for anomaly detection of one dimensional real valued data. The multidimensional nature of JSON documents makes anomaly detection more difficult. This README proposes a two stage algorithm for the anomaly detection of JSON documents. The first stage of the algorithm uses [random matrix dimensionality reduction](ttps://en.wikipedia.org/wiki/Random_projectio) to vectorize a JSON document into a fixed length vector (JSON document vector). The second stage of the algorithm uses one of three methods: average [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity), a single neuron, or an [autoencoder](https://en.wikipedia.org/wiki/Autoencoder) to determine how surprising the JSON document vector is. Simple statistical analysis can then be used for determining which JSON documents the user should be alerted to.
 
 ## Background
 * [Random projection](https://en.wikipedia.org/wiki/Random_projection)
 * [Anomaly detection with autoencoders](http://philipperemy.github.io/anomaly-detection/)
 
-## Vectorization
+## Vectorization (first stage)
 ### Converting a JSON document into a vector
 The typical approach for converting a document into a vector is to count words. Each entry in the vector corresponds to the count for a particular word. In order to capture more document struct word pairs could be counted instead. JSON documents have explicit struct that should be captured in the computed vector. For example the below JSON:
 ```json
@@ -49,15 +49,56 @@ Dimensionality reduction compresses a large vector into a smaller vector. This i
 
 The code for the vectorizer can be found [here](https://github.com/pointlander/anomaly/blob/master/vectorizer.go).
 
-## Anomaly detection with autoencoders
+## Anomaly detection (second stage)
+Three anomaly detection methods are described below. Each method computes a surprise metric from a JSON document vector.
+
+### With average cosine similarity
+The average cosine similarity method works by computing the cosine similarity between a given JSON document vector and each member of a JSON document vector database. The average is then computed. This metric represents how close the given JSON document vector is to the database of document vectors on average. After computing the average cosine similarity the JSON document vector is added to the database. The algorithm gets slower with time.
+
+The code for the average cosine similarity algorithm can be found [here](https://github.com/pointlander/anomaly/blob/master/average_similarity.go).
+
+### With a single neuron
+A single neuron implemented with the cosine similarity formula can be used for anomaly detection. The single valued output of the neuron represents how surprising the inputed JSON document vector is. The single neuron is trained with a JSON document vector as input and 1 as the output.
+
+The code for the single neuron algorithm can be found [here](https://github.com/pointlander/anomaly/blob/master/neuron.go).
+
+### With autoencoders
 An autoencoding neural network isn't trained with labeled data, instead it is trained to output the input vector. The standard autoencoder has three layers. The top and bottom layers are the same size, and the middle layer is typically more narrow than the top and bottom layers. The narrow middle layer creates an information bottleneck. It is possible to compute an autoencoder error metric for a particular JSON document vector. This "surprise" metric is computed by inputing the JSON document vector into the neural network and then computing the [mean squared error](https://en.wikipedia.org/wiki/Mean_squared_error) at the output. The neural network can then be trained on the JSON document vector, so the neural network isn't surprised by similar JSON document vectors in the future.
 
+The code for the autoencoder algorithm can be found [here](https://github.com/pointlander/anomaly/blob/master/autoencoder.go).
+
+## Benchmarks
+The benchmarks are executed with:
+```
+go test -bench=.
+```
+
+```
+BenchmarkLFSR-4                         1000000000               2.11 ns/op
+BenchmarkSource-4                       500000000                3.74 ns/op
+BenchmarkVectorizer-4                       2000            592675 ns/op
+BenchmarkVectorizerLFSR-4                  10000            107476 ns/op
+BenchmarkVectorizerNoCache-4                2000           1106657 ns/op
+BenchmarkVectorizerLFSRNoCache-4           10000            207921 ns/op
+BenchmarkAverageSimilarity-4               10000           1247607 ns/op
+BenchmarkNeuron-4                          10000            118933 ns/op
+BenchmarkAutoencoder-4                       200           7634839 ns/op
+```
+
 ## Verification
-Verification is accomplished by generating random JSON documents from a gaussian random variable and feeding them into the anomaly detection algorithm. The below graph shows the distribution of autoencoder error computed from random JSON documents:
+Verification is accomplished by generating random JSON documents from a gaussian random variable and feeding them into the anomaly detection algorithm. The below graph shows the distribution resulting from average cosine similarity method being fed random JSON documents:
 
-![Graph 1 autoencoder error distribution](graph_1_autoencoder_error_distribution.png?raw=true)
+![Graph 1 average cosine similarity distribution](graph_1_average_similarity_distribution.png?raw=true)
 
-As should be expected graph 1 appears to be gaussian. Another test implemented feeds the below two JSON documents into the autoencoder after the autoencoder has been trained on 1000 random JSON documents:
+For single neuron:
+
+![Graph 3 neuron distribution](graph_3_neuron_distribution.png?raw=true)
+
+For autoencoder:
+
+![Graph 6 autoencoder error distribution](graph_6_autoencoder_error_distribution.png?raw=true)
+
+As should be expected the graphs appears to be gaussian. Another test implemented feeds the below two JSON documents into each of the above three anomaly detection algorithms after they have been trained on 1000 random JSON documents:
 ```json
 {
  "alfa": [
@@ -82,18 +123,24 @@ As should be expected graph 1 appears to be gaussian. Another test implemented f
  ]
 }
 ```
-The second JSON document is more similar to the randomly generated JSON documents than the first JSON document. This idea is tested 100 times by changing the random seed used to generate the 1000 random JSON documents. The first JSON document has greater autoencoder error than the second JSON document 98 out of 100 trials. This shows that the anomaly detection algorithm isn't a random number generator. One final test is performed by computing the average [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity) for each 1000 randomly generated JSON documents. The below graph 3 shows that autoencoder error correlates with average cosine similarity:
+The second JSON document is more similar to the randomly generated JSON documents than the first JSON document. This idea is tested 100 times by changing the random seed used to generate the 1000 random JSON documents. All of the methods pass the test with a score near 100. This shows that the anomaly detection algorithm isn't a random number generator. One final test is performed by graphing the output of the single neuron method and the autoencoder method against the average cosine similarity method. The below graph 5 shows that the output of the single neuron correlates with average cosine similarity:
 
-![Graph 3 autoencoder error vs average similarity](graph_3_autoencoder_error_vs_average_similarity.png?raw=true)
+![Graph 5 neuron vs average similarity](graph_5_neuron_vs_average_similarity.png?raw=true)
 
-The below two graphs show autoencoder error and average similarity are not correlated through time:
+The below graph 8 shows that the autoencoder method correlates with average cosine similarity:
 
-![Graph 4 autoencoder error vs time](graph_4_autoencoder_error.png?raw=true)
+![Graph 8 autoencoder error vs average similarity](graph_8_autoencoder_error_vs_average_similarity.png?raw=true)
 
-![Graph 5 average similarity vs time](graph_5_average_similarity.png?raw=true)
+The below three graphs show average cosine similarity, single neuron, and autoencoder are not correlated through time:
+
+![Graph 2 average similarity vs time](graph_2_average_similarity.png?raw=true)
+
+![Graph 2 neuron vs time](graph_4_neuron.png?raw=true)
+
+![Graph 7 autoencoder error vs time](graph_7_autoencoder_error.png?raw=true)
 
 ## Conclusion
-An anomaly detection engine has been demonstrated. The algorithm is made up of two components: a vectorizer and an autocoding neural network. After vectorization the algorithm has a fixed cost for determining the autoencoder error. The JSON document vector can then be used to train the autoencoder thus storing the vector for future comparisons (real time learning). The autoencoder error is equivalent to computing the average cosine similarity for a given JSON document.
+An anomaly detection engine has been demonstrated. The algorithm is made up of two components: a vectorizer and an algorithm for computing surprise. After vectorization the single neuron and autoencoder algorithms have a fixed cost for determining if a JSON document is an anomaly. The single neuron and autoencoder methods are suitable for taking a real time learning approach. The single neuron method is faster than the other two methods.
 
 ## Future work
-A number of modifications are possible for the autoencoder. One possible change is to use the TanH [activation function](https://en.wikipedia.org/wiki/Activation_function). Initial experiments with the TanH activation function failed. Another change is to use cosine similarity as the [loss function](https://en.wikipedia.org/wiki/Loss_function) for the neural network. One final idea is a recurrent neural network could be used to replace both the document vectorizer and feed forward autoencoder.
+A recurrent neural network could be used to replace both the first stage and second stage of the above anomaly detection algorithm.

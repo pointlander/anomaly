@@ -213,13 +213,6 @@ func main() {
 	scatterPlot("Time", "Average Similarity", "average_similarity.png", nil, averageSimilarity)
 	averageSimilarity.Print()
 
-	autoencoderError := Anomaly(1, anomaly.NewAutoencoder)
-	histogram("Autoencoder Error Distribution", "autoencoder_error_distribution.png", autoencoderError)
-	scatterPlot("Time", "Autoencoder Error", "autoencoder_error.png", nil, autoencoderError)
-	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similarity.png",
-		averageSimilarity, autoencoderError)
-	autoencoderError.Print()
-
 	neuron := Anomaly(1, anomaly.NewNeuron)
 	histogram("Neuron Distribution", "neuron_distribution.png", neuron)
 	scatterPlot("Time", "Neuron", "neuron.png", nil, neuron)
@@ -227,7 +220,14 @@ func main() {
 		averageSimilarity, neuron)
 	neuron.Print()
 
-	test := func(factory anomaly.NetworkFactory) {
+	autoencoderError := Anomaly(1, anomaly.NewAutoencoder)
+	histogram("Autoencoder Error Distribution", "autoencoder_error_distribution.png", autoencoderError)
+	scatterPlot("Time", "Autoencoder Error", "autoencoder_error.png", nil, autoencoderError)
+	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similarity.png",
+		averageSimilarity, autoencoderError)
+	autoencoderError.Print()
+
+	test := func(factory anomaly.NetworkFactory) int {
 		count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1
 		process := func() {
 			result := <-results
@@ -253,9 +253,12 @@ func main() {
 		for total < Trials {
 			process()
 		}
-		fmt.Printf("count=%v / %v\n", count, total)
+		return count
 	}
-	test(anomaly.NewAverageSimilarity)
-	test(anomaly.NewNeuron)
-	test(anomaly.NewAutoencoder)
+	averageSimilarityCount := test(anomaly.NewAverageSimilarity)
+	neuronCount := test(anomaly.NewNeuron)
+	autoencoderCount := test(anomaly.NewAutoencoder)
+	fmt.Printf("average similarity: %v / %v\n", averageSimilarityCount, Trials)
+	fmt.Printf("neuron: %v / %v\n", neuronCount, Trials)
+	fmt.Printf("autoencoder: %v / %v\n", autoencoderCount, Trials)
 }
