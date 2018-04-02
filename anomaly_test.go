@@ -73,3 +73,51 @@ func BenchmarkVectorizerLFSRNoCache(b *testing.B) {
 		vectorizer.Vectorize(object)
 	}
 }
+
+func BenchmarkAverageSimilarity(b *testing.B) {
+	rnd := rand.New(rand.NewSource(1))
+	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
+	network := NewAverageSimilarity(1024, rnd)
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		object := GenerateRandomJSON(rnd)
+		vector := vectorizer.Vectorize(object)
+		unit := Normalize(vector)
+		if len(network.(*AverageSimilarity).Vectors) > 1000 {
+			network.(*AverageSimilarity).Vectors = network.(*AverageSimilarity).Vectors[:1000]
+		}
+		b.StartTimer()
+		network.Train(unit)
+	}
+}
+
+func BenchmarkNeuron(b *testing.B) {
+	rnd := rand.New(rand.NewSource(1))
+	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
+	network := NewNeuron(1024, rnd)
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		object := GenerateRandomJSON(rnd)
+		vector := vectorizer.Vectorize(object)
+		unit := Normalize(vector)
+		b.StartTimer()
+		network.Train(unit)
+	}
+}
+
+func BenchmarkAutoencoder(b *testing.B) {
+	rnd := rand.New(rand.NewSource(1))
+	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
+	network := NewAutoencoder(1024, rnd)
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		object := GenerateRandomJSON(rnd)
+		vector := vectorizer.Vectorize(object)
+		unit := Normalize(vector)
+		b.StartTimer()
+		network.Train(unit)
+	}
+}
