@@ -150,7 +150,6 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		h.Normalize(1)
 		p.Add(h)
 
 		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("graph_%v_%v", graph, name))
