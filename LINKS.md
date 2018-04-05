@@ -2,6 +2,9 @@
 https://en.wikipedia.org/wiki/Hough_transform  
 http://rosettacode.org/wiki/Hough_transform  
 
+# Mathematics for Machine Learning
+https://mml-book.github.io/  
+
 # RNN
 https://github.com/vmarkovtsev/BiDiSentiment  
 https://www.reddit.com/r/golang/comments/83wq6f/sentiment_analysis_in_go_using_a_bidirectional/  
@@ -18,3 +21,8 @@ https://blog.machinebox.io/mute-uninteresting-log-noise-with-machine-learning-da
 
 # Anomaly Detection in Time Series using Auto Encoders
 http://philipperemy.github.io/anomaly-detection/  
+
+# Universal Sentence Encoder
+https://news.ycombinator.com/item?id=16713964  
+https://arxiv.org/abs/1803.11175  
+
