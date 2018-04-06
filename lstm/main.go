@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"os/signal"
@@ -11,6 +12,9 @@ import (
 	"syscall"
 	"time"
 
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
 	T "gorgonia.org/gorgonia"
 
 	"net/http"
@@ -31,7 +35,7 @@ var outputSize = -1
 
 // gradient update stuff
 var l2reg = 0.000001
-var learnrate = 0.01
+var learnrate = 0.0001
 var clipVal = 5.0
 
 type contextualError interface {
@@ -45,6 +49,7 @@ func cleanup(sigChan chan os.Signal, doneChan chan bool, profiling bool) {
 	select {
 	case <-sigChan:
 		log.Println("EMERGENCY EXIT!")
+		graph()
 		if profiling {
 			pprof.StopCPUProfile()
 		}
@@ -53,6 +58,55 @@ func cleanup(sigChan chan os.Signal, doneChan chan bool, profiling bool) {
 	case <-doneChan:
 		return
 	}
+}
+
+var costValues, perpValues = make(plotter.Values, 0, 1000), make(plotter.Values, 0, 10000)
+
+func graph() {
+	graph := 0
+
+	scatterPlot := func(xTitle, yTitle, name string, yy plotter.Values) {
+		xys := make(plotter.XYs, len(yy))
+		for i, v := range yy {
+			xys[i].X = float64(i)
+			xys[i].Y = v
+		}
+
+		x, y, x2, y2, xy, n := 0.0, 0.0, 0.0, 0.0, 0.0, float64(len(xys))
+		for i := range xys {
+			x += xys[i].X
+			y += xys[i].Y
+			x2 += xys[i].X * xys[i].X
+			y2 += xys[i].Y * xys[i].Y
+			xy += xys[i].X * xys[i].Y
+		}
+		corr := (n*xy - x*y) / (math.Sqrt(n*x2-x*x) * math.Sqrt(n*y2-y*y))
+
+		p, err := plot.New()
+		if err != nil {
+			panic(err)
+		}
+
+		p.Title.Text = fmt.Sprintf("%v vs %v corr=%v", yTitle, xTitle, corr)
+		p.X.Label.Text = xTitle
+		p.Y.Label.Text = yTitle
+
+		s, err := plotter.NewScatter(xys)
+		if err != nil {
+			panic(err)
+		}
+		p.Add(s)
+
+		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("graph_%v_%v", graph, name))
+		if err != nil {
+			panic(err)
+		}
+
+		graph++
+	}
+
+	scatterPlot("Time", "Cost", "cost_vs_time.png", costValues)
+	scatterPlot("Time", "Perplexity", "cost_vs_perplexity.png", perpValues)
 }
 
 func main() {
@@ -114,7 +168,8 @@ func main() {
 			timetaken := time.Since(eStart)
 			fmt.Printf("Time Taken: %v\tCost: %v\tPerplexity: %v\n", timetaken, cost, perp)
 			eStart = time.Now()
-
+			costValues = append(costValues, float64(cost))
+			perpValues = append(perpValues, float64(perp))
 		}
 
 		if *memprofile != "" && i == 1000 {
@@ -128,6 +183,8 @@ func main() {
 		}
 
 	}
+
+	graph()
 
 	end := time.Now()
 	fmt.Printf("%v", end.Sub(start))

@@ -2,8 +2,14 @@ package main
 
 import "strings"
 
-const START rune = 0x02
-const END rune = 0x03
+const (
+	// START is the start symbol
+	START rune = 0x02
+	// END is the end symbol
+	END rune = 0x03
+	// Steps is how many steps for backpropagation in time there is
+	Steps = 8
+)
 
 // vocab related
 var sentences []string
@@ -43,17 +49,17 @@ func init() {
 	for _, s := range sentencesRaw {
 		s2 := strings.TrimSpace(s)
 		length := len(s2)
-		if length >= 4 {
-			start := make([]rune, 5)
+		if length >= Steps {
+			start := make([]rune, Steps)
 			start[0] = START
-			copy(start[1:5], []rune(s2[:4]))
+			copy(start[1:], []rune(s2))
 			sentences = append(sentences, string(start))
-			for i := 1; i < length-4; i++ {
-				sentences = append(sentences, s2[i:i+4])
+			for i := 0; i <= length-Steps; i++ {
+				sentences = append(sentences, s2[i:i+Steps])
 			}
-			end := make([]rune, 5)
-			end[4] = END
-			copy(end, []rune(s2[length-4:]))
+			end := make([]rune, Steps)
+			end[Steps-1] = END
+			copy(end, []rune(s2[length-Steps+1:]))
 			sentences = append(sentences, string(end))
 		}
 	}

@@ -12,7 +12,7 @@ import (
 	"gorgonia.org/tensor"
 )
 
-var hiddenSizes = []int{100}
+var hiddenSizes = []int{10}
 var embeddingSize = 10
 
 type layer struct {
@@ -172,7 +172,8 @@ func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int) *
 	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(Gaussian32(0.0, 0.08, outputSize, lastHiddenSize)))
 	m.bias_d = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
 
-	m.embedding = tensor.New(tensor.WithShape(inputSize, embeddingSize), tensor.WithBacking(Gaussian32(0.0, 0.008, inputSize, embeddingSize)))
+	//m.embedding = tensor.New(tensor.WithShape(inputSize, embeddingSize), tensor.WithBacking(Gaussian32(0.0, 0.008, inputSize, embeddingSize)))
+	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(Gaussian32(0.0, 0.008, embeddingSize, inputSize)))
 	return m
 
 }
@@ -266,7 +267,11 @@ func (r *charRNN) fwd(srcIndex int, prev *lstmOut) (retVal *lstmOut, err error) 
 	var hiddens, cells Nodes
 	for i, l := range r.ls {
 		if i == 0 {
-			inputVector = Must(Slice(r.embedding, S(srcIndex)))
+			inputTensor := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.inputSize))
+			inputTensor.SetF32(srcIndex, 1.0)
+			input := NewVector(r.g, tensor.Float32, WithShape(r.inputSize), WithValue(inputTensor))
+			inputVector = Must(Mul(r.embedding, input))
+			//inputVector = Must(Slice(r.embedding, S(srcIndex)))
 		} else {
 			inputVector = hiddens[i-1]
 		}
@@ -319,9 +324,15 @@ func (r *charRNN) costFn(sentence string) (cost, perplexity *Node, n int, err er
 		}
 
 		logprob := Must(Neg(Must(Log(prev.probs))))
-		loss = Must(Slice(logprob, S(targetId)))
+
+		outputTensor := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.outputSize))
+		outputTensor.SetF32(targetId, 1.0)
+		output := NewVector(r.g, tensor.Float32, WithShape(r.outputSize), WithValue(outputTensor))
+		loss = Must(Mul(logprob, output))
+		//loss = Must(Slice(logprob, S(targetId)))
 		log2prob := Must(Neg(Must(Log2(prev.probs))))
-		perp = Must(Slice(log2prob, S(targetId)))
+		perp = Must(Mul(log2prob, output))
+		//perp = Must(Slice(log2prob, S(targetId)))
 
 		if cost == nil {
 			cost = loss
