@@ -172,10 +172,8 @@ func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int) *
 	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(Gaussian32(0.0, 0.08, outputSize, lastHiddenSize)))
 	m.bias_d = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
 
-	//m.embedding = tensor.New(tensor.WithShape(inputSize, embeddingSize), tensor.WithBacking(Gaussian32(0.0, 0.008, inputSize, embeddingSize)))
 	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(Gaussian32(0.0, 0.008, embeddingSize, inputSize)))
 	return m
-
 }
 
 type charRNN struct {
@@ -189,9 +187,14 @@ type charRNN struct {
 
 	embedding *Node
 
-	inputVector *Node
 	prevHiddens Nodes
 	prevCells   Nodes
+
+	inputs           []*tensor.Dense
+	outputs          []*tensor.Dense
+	cost, perplexity *Node
+	machine          VM
+	lstm             *lstmOut
 }
 
 func newCharRNN(m *model) *charRNN {
@@ -221,8 +224,6 @@ func newCharRNN(m *model) *charRNN {
 	r.embedding = NodeFromAny(r.g, m.embedding, WithName("Embedding"))
 
 	// these are to simulate a previous state
-	dummyInputVec := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.embeddingSize)) // zeroes
-	r.inputVector = NewVector(g, Float32, WithName("inputVector_"), WithShape(r.embeddingSize), WithValue(dummyInputVec))
 	r.prevHiddens = hiddens
 	r.prevCells = cells
 
@@ -255,7 +256,7 @@ func (r *charRNN) learnables() (retVal Nodes) {
 	return
 }
 
-func (r *charRNN) fwd(srcIndex int, prev *lstmOut) (retVal *lstmOut, err error) {
+func (r *charRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut, err error) {
 	prevHiddens := r.prevHiddens
 	prevCells := r.prevCells
 	if prev != nil {
@@ -263,15 +264,13 @@ func (r *charRNN) fwd(srcIndex int, prev *lstmOut) (retVal *lstmOut, err error) 
 		prevCells = prev.cells
 	}
 
-	inputVector := r.inputVector
 	var hiddens, cells Nodes
 	for i, l := range r.ls {
+		var inputVector *Node
 		if i == 0 {
-			inputTensor := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.inputSize))
-			inputTensor.SetF32(srcIndex, 1.0)
+			inputTensor = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.inputSize))
 			input := NewVector(r.g, tensor.Float32, WithShape(r.inputSize), WithValue(inputTensor))
 			inputVector = Must(Mul(r.embedding, input))
-			//inputVector = Must(Slice(r.embedding, S(srcIndex)))
 		} else {
 			inputVector = hiddens[i-1]
 		}
@@ -303,36 +302,27 @@ func (r *charRNN) fwd(srcIndex int, prev *lstmOut) (retVal *lstmOut, err error) 
 	return
 }
 
-func (r *charRNN) costFn(sentence string) (cost, perplexity *Node, n int, err error) {
-	asRunes := []rune(sentence)
-	n = len(asRunes)
+func (r *charRNN) modeLearn() (err error) {
+	inputs := make([]*tensor.Dense, Steps-1)
+	outputs := make([]*tensor.Dense, Steps-1)
+	var cost, perplexity *Node
 
 	var prev *lstmOut
-	var source, target rune
-	for i := 0; i < n-1; i++ {
-		source = asRunes[i]
-		target = asRunes[i+1]
-
-		sourceId := vocabIndex[source]
-		targetId := vocabIndex[target]
-
+	for i := 0; i < Steps-1; i++ {
 		var loss, perp *Node
 		// cache
 
-		if prev, err = r.fwd(sourceId, prev); err != nil {
+		inputs[i], prev, err = r.fwd(prev)
+		if err != nil {
 			return
 		}
 
 		logprob := Must(Neg(Must(Log(prev.probs))))
-
-		outputTensor := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.outputSize))
-		outputTensor.SetF32(targetId, 1.0)
-		output := NewVector(r.g, tensor.Float32, WithShape(r.outputSize), WithValue(outputTensor))
+		outputs[i] = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.outputSize))
+		output := NewVector(r.g, tensor.Float32, WithShape(r.outputSize), WithValue(outputs[i]))
 		loss = Must(Mul(logprob, output))
-		//loss = Must(Slice(logprob, S(targetId)))
 		log2prob := Must(Neg(Must(Log2(prev.probs))))
 		perp = Must(Mul(log2prob, output))
-		//perp = Must(Slice(log2prob, S(targetId)))
 
 		if cost == nil {
 			cost = loss
@@ -347,12 +337,36 @@ func (r *charRNN) costFn(sentence string) (cost, perplexity *Node, n int, err er
 			perplexity = Must(Add(perplexity, perp))
 		}
 	}
+
+	r.inputs = inputs
+	r.outputs = outputs
+	r.cost = cost
+	r.perplexity = perplexity
+
+	_, err = Grad(cost, r.learnables()...)
+	if err != nil {
+		return
+	}
+
+	r.machine = NewTapeMachine(r.g, BindDualValues(r.learnables()...))
+	return
+}
+
+func (r *charRNN) modeInference() (err error) {
+	inputs := make([]*tensor.Dense, 1)
+	var lstm *lstmOut
+	inputs[0], lstm, err = r.fwd(nil)
+	if err != nil {
+		return
+	}
+	r.inputs = inputs
+	r.machine = NewTapeMachine(r.g)
+	r.lstm = lstm
 	return
 }
 
 func (r *charRNN) predict() {
 	var sentence []rune
-	var prev *lstmOut
 	var err error
 
 	for {
@@ -360,24 +374,20 @@ func (r *charRNN) predict() {
 		if len(sentence) > 0 {
 			id = vocabIndex[sentence[len(sentence)-1]]
 		}
+		r.inputs[0].Zero()
+		r.inputs[0].SetF32(id, 1.0)
 
-		if prev, err = r.fwd(id, prev); err != nil {
-			panic(err)
-		}
-		g := r.g.SubgraphRoots(prev.probs)
 		// f, _ := os.Create("log1.log")
 		// logger := log.New(f, "", 0)
 		// machine := NewLispMachine(g, ExecuteFwdOnly(), WithLogger(logger), WithWatchlist(), LogBothDir())
-		machine := NewLispMachine(g, ExecuteFwdOnly())
-		machine.ForceCPU()
-		if err := machine.RunAll(); err != nil {
+		if err = r.machine.RunAll(); err != nil {
 			if ctxerr, ok := err.(contextualError); ok {
 				ioutil.WriteFile("FAIL1.dot", []byte(ctxerr.Node().RestrictedToDot(3, 3)), 0644)
 			}
-			log.Printf("ERROR1 while predicting with %p %+v", machine, err)
+			log.Printf("ERROR1 while predicting with %v %+v", r.machine, err)
 		}
 
-		sampledID := sample(prev.probs.Value())
+		sampledID := sample(r.lstm.probs.Value())
 		var char rune // hur hur varchar
 		if char = vocab[sampledID]; char == END {
 			break
@@ -388,36 +398,30 @@ func (r *charRNN) predict() {
 		}
 
 		sentence = append(sentence, char)
-		// r.g.UnbindAllNonInputs()
+		r.machine.Reset()
 	}
 
 	var sentence2 []rune
-	prev = nil
 	for {
 		var id int
 		if len(sentence2) > 0 {
 			id = vocabIndex[sentence2[len(sentence2)-1]]
 		}
+		r.inputs[0].Zero()
+		r.inputs[0].SetF32(id, 1.0)
 
-		if prev, err = r.fwd(id, prev); err != nil {
-			panic(err)
-		}
-
-		g := r.g.SubgraphRoots(prev.probs)
 		// f, _ := os.Create("log2.log")
 		// logger := log.New(f, "", 0)
 		// machine := NewLispMachine(g, ExecuteFwdOnly(), WithLogger(logger), WithWatchlist(), LogBothDir())
-		machine := NewLispMachine(g, ExecuteFwdOnly())
-		machine.ForceCPU()
-		if err := machine.RunAll(); err != nil {
+		if err = r.machine.RunAll(); err != nil {
 			if ctxerr, ok := err.(contextualError); ok {
 				log.Printf("Instruction ID %v", ctxerr.InstructionID())
 				ioutil.WriteFile("FAIL2.dot", []byte(ctxerr.Node().RestrictedToDot(3, 3)), 0644)
 			}
-			log.Printf("ERROR2 while predicting with %p: %+v", machine, err)
+			log.Printf("ERROR2 while predicting with %v: %+v", r.machine, err)
 		}
 
-		sampledID := maxSample(prev.probs.Value())
+		sampledID := maxSample(r.lstm.probs.Value())
 
 		var char rune // hur hur varchar
 		if char = vocab[sampledID]; char == END {
@@ -429,8 +433,8 @@ func (r *charRNN) predict() {
 		}
 
 		sentence2 = append(sentence2, char)
+		r.machine.Reset()
 	}
-	r.g.UnbindAllNonInputs()
 
 	fmt.Printf("Sampled: %q; \nArgMax: %q\n", string(sentence), string(sentence2))
 }
@@ -442,59 +446,48 @@ func (r *charRNN) cleanup() {
 	}
 }
 
-func run(r *charRNN, iter int, solver Solver) (retCost, retPerp float32, err error) {
+func (r *charRNN) learn(iter int, solver Solver) (retCost, retPerp float32, err error) {
 	i := rand.Intn(len(sentences))
 	sentence := sentences[i]
 
-	var cost, perp *Node
 	var n int
+	asRunes := []rune(sentence)
+	n = len(asRunes)
 
-	cost, perp, n, err = r.costFn(sentence)
-	if err != nil {
-		return
-	}
+	for j := 0; j < n-1; j++ {
+		source := asRunes[j]
+		target := asRunes[j+1]
 
-	var readCost *Node
-	var readPerp *Node
-	var costVal Value
-	var perpVal Value
-
-	var g *ExprGraph
-	if iter%100 == 0 {
-		readPerp = Read(perp, &perpVal)
-		readCost = Read(cost, &costVal)
-		g = r.g.SubgraphRoots(cost, readPerp, readCost)
-	} else {
-		g = r.g.SubgraphRoots(cost)
+		r.inputs[j].Zero()
+		r.inputs[j].SetF32(vocabIndex[source], 1.0)
+		r.outputs[j].Zero()
+		r.outputs[j].SetF32(vocabIndex[target], 1.0)
 	}
 
 	// f, _ := os.Create("FAIL.log")
 	// logger := log.New(f, "", 0)
 	// machine := NewLispMachine(g, WithLogger(logger), WithValueFmt("%-1.1s"), LogBothDir(), WithWatchlist())
 
-	machine := NewLispMachine(g)
-	if err = machine.RunAll(); err != nil {
+	if err = r.machine.RunAll(); err != nil {
 		if ctxerr, ok := err.(contextualError); ok {
 			ioutil.WriteFile("FAIL.dot", []byte(ctxerr.Node().RestrictedToDot(3, 3)), 0644)
 
 		}
 		return
 	}
-	machine.UnbindAll()
+	defer r.machine.Reset()
 
 	err = solver.Step(r.learnables())
 	if err != nil {
 		return
 	}
 
-	if iter%100 == 0 {
-		if sv, ok := perpVal.(Scalar); ok {
-			v := sv.Data().(float32)
-			retPerp = float32(math.Pow(2, float64(v)/(float64(n)-1)))
-		}
-		if cv, ok := costVal.(Scalar); ok {
-			retCost = cv.Data().(float32)
-		}
+	if sv, ok := r.perplexity.Value().(Scalar); ok {
+		v := sv.Data().(float32)
+		retPerp = float32(math.Pow(2, float64(v)/(float64(n)-1)))
+	}
+	if cv, ok := r.cost.Value().(Scalar); ok {
+		retCost = cv.Data().(float32)
 	}
 
 	return

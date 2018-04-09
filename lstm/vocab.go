@@ -8,7 +8,7 @@ const (
 	// END is the end symbol
 	END rune = 0x03
 	// Steps is how many steps for backpropagation in time there is
-	Steps = 8
+	Steps = 4
 )
 
 // vocab related

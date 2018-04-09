@@ -141,6 +141,16 @@ func main() {
 
 	m := NewLSTMModel(inputSize, embeddingSize, outputSize, hiddenSizes)
 	r := newCharRNN(m)
+	err := r.modeLearn()
+	if err != nil {
+		panic(err)
+	}
+
+	predict := newCharRNN(m)
+	err = predict.modeInference()
+	if err != nil {
+		panic(err)
+	}
 
 	solver := T.NewRMSPropSolver(T.WithLearnRate(learnrate), T.WithL2Reg(l2reg), T.WithClip(clipVal))
 	start := time.Now()
@@ -148,20 +158,15 @@ func main() {
 	for i := 0; i <= 100000; i++ {
 		// log.Printf("Iter: %d", i)
 		// _, _, err := m.run(i, solver)
-		cost, perp, err := run(r, i, solver)
+		cost, perp, err := r.learn(i, solver)
 		if err != nil {
 			panic(fmt.Sprintf("%+v", err))
 		}
 
 		if i%1000 == 0 {
 			log.Printf("Going to predict now")
-			r.predict()
+			predict.predict()
 			log.Printf("Done predicting")
-
-			old := r
-			r = newCharRNN(m)
-			old.cleanup()
-			log.Printf("New RNN - m.embeddint %v", m.embedding.Shape())
 		}
 
 		if i%100 == 0 {
