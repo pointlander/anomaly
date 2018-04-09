@@ -302,6 +302,29 @@ func (r *charRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut
 	return
 }
 
+func (r *charRNN) feedback() {
+	prev := r.lstm
+	for i := range r.prevHiddens {
+		input := r.prevHiddens[i].Value().(*tensor.Dense)
+		output := prev.hiddens[i].Value().(*tensor.Dense)
+		output.CopyTo(input)
+	}
+	for i := range r.prevCells {
+		input := r.prevCells[i].Value().(*tensor.Dense)
+		output := prev.cells[i].Value().(*tensor.Dense)
+		output.CopyTo(input)
+	}
+}
+
+func (r *charRNN) reset() {
+	for i := range r.prevHiddens {
+		r.prevHiddens[i].Value().(*tensor.Dense).Zero()
+	}
+	for i := range r.prevCells {
+		r.prevCells[i].Value().(*tensor.Dense).Zero()
+	}
+}
+
 func (r *charRNN) modeLearn() (err error) {
 	inputs := make([]*tensor.Dense, Steps-1)
 	outputs := make([]*tensor.Dense, Steps-1)
@@ -349,6 +372,7 @@ func (r *charRNN) modeLearn() (err error) {
 	}
 
 	r.machine = NewTapeMachine(r.g, BindDualValues(r.learnables()...))
+	r.lstm = prev
 	return
 }
 
@@ -369,6 +393,7 @@ func (r *charRNN) predict() {
 	var sentence []rune
 	var err error
 
+	r.reset()
 	for {
 		var id int
 		if len(sentence) > 0 {
@@ -398,10 +423,12 @@ func (r *charRNN) predict() {
 		}
 
 		sentence = append(sentence, char)
+		r.feedback()
 		r.machine.Reset()
 	}
 
 	var sentence2 []rune
+	r.reset()
 	for {
 		var id int
 		if len(sentence2) > 0 {
@@ -433,17 +460,11 @@ func (r *charRNN) predict() {
 		}
 
 		sentence2 = append(sentence2, char)
+		r.feedback()
 		r.machine.Reset()
 	}
 
 	fmt.Printf("Sampled: %q; \nArgMax: %q\n", string(sentence), string(sentence2))
-}
-
-func (r *charRNN) cleanup() {
-	r.g.UnbindAllNonInputs()
-	for _, n := range r.g.AllNodes() {
-		ReturnNode(n)
-	}
 }
 
 func (r *charRNN) learn(iter int, solver Solver) (retCost, retPerp float32, err error) {
