@@ -35,7 +35,7 @@ var outputSize = -1
 
 // gradient update stuff
 var l2reg = 0.000001
-var learnrate = 0.0001
+var learnrate = 0.00001
 var clipVal = 5.0
 
 type contextualError interface {
@@ -95,6 +95,7 @@ func graph() {
 		if err != nil {
 			panic(err)
 		}
+		s.Radius = 1
 		p.Add(s)
 
 		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("graph_%v_%v", graph, name))
@@ -106,10 +107,12 @@ func graph() {
 	}
 
 	scatterPlot("Time", "Cost", "cost_vs_time.png", costValues)
-	scatterPlot("Time", "Perplexity", "cost_vs_perplexity.png", perpValues)
+	scatterPlot("Time", "Perplexity", "perplexity_vs_time.png", perpValues)
 }
 
 func main() {
+	//Use(blase.Implementation())
+	fmt.Println(T.WhichBLAS())
 	flag.Parse()
 	rand.Seed(1337)
 
@@ -162,19 +165,26 @@ func main() {
 		if err != nil {
 			panic(fmt.Sprintf("%+v", err))
 		}
+		costAvg, perpAvg := 0.0, 0.0
+		for _, v := range cost {
+			costAvg += v
+			costValues = append(costValues, v)
+		}
+		for _, v := range perp {
+			perpAvg += v
+			perpValues = append(perpValues, v)
+		}
+		costAvg /= float64(len(cost))
+		perpAvg /= float64(len(perp))
 
-		if i%1000 == 0 {
+		if i%10 == 0 {
 			log.Printf("Going to predict now")
 			predict.predict()
 			log.Printf("Done predicting")
-		}
 
-		if i%100 == 0 {
 			timetaken := time.Since(eStart)
-			fmt.Printf("Time Taken: %v\tCost: %v\tPerplexity: %v\n", timetaken, cost, perp)
+			fmt.Printf("Time Taken: %v\tCost: %.3f\tPerplexity: %.3f\n", timetaken, costAvg, perpAvg)
 			eStart = time.Now()
-			costValues = append(costValues, float64(cost))
-			perpValues = append(perpValues, float64(perp))
 		}
 
 		if *memprofile != "" && i == 1000 {

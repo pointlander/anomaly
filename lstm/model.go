@@ -12,8 +12,13 @@ import (
 	"gorgonia.org/tensor"
 )
 
+const (
+	// StdDev is the standard deviation for initialization
+	StdDev        = 0.08
+	embeddingSize = 10
+)
+
 var hiddenSizes = []int{10}
-var embeddingSize = 10
 
 type layer struct {
 	wix    Value
@@ -144,35 +149,35 @@ func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int) *
 
 		// input gate weights
 
-		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, prevSize)))
-		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, hiddenSize)))
+		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
+		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
 		l.bias_i = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// output gate weights
 
-		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, prevSize)))
-		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, hiddenSize)))
+		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
+		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
 		l.bias_o = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// forget gate weights
 
-		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, prevSize)))
-		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, hiddenSize)))
+		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
+		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
 		l.bias_f = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// cell write
 
-		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, prevSize)))
-		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, 0.08, hiddenSize, hiddenSize)))
+		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
+		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
 		l.bias_c = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 	}
 
 	lastHiddenSize := hiddenSizes[len(hiddenSizes)-1]
 
-	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(Gaussian32(0.0, 0.08, outputSize, lastHiddenSize)))
+	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, outputSize, lastHiddenSize)))
 	m.bias_d = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
 
-	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(Gaussian32(0.0, 0.008, embeddingSize, inputSize)))
+	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(Gaussian32(0.0, StdDev, embeddingSize, inputSize)))
 	return m
 }
 
@@ -192,9 +197,9 @@ type charRNN struct {
 
 	inputs           []*tensor.Dense
 	outputs          []*tensor.Dense
+	previous         []*lstmOut
 	cost, perplexity *Node
 	machine          VM
-	lstm             *lstmOut
 }
 
 func newCharRNN(m *model) *charRNN {
@@ -302,17 +307,23 @@ func (r *charRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut
 	return
 }
 
-func (r *charRNN) feedback() {
-	prev := r.lstm
+func (r *charRNN) feedback(tap int) {
+	prev := r.previous[tap]
 	for i := range r.prevHiddens {
 		input := r.prevHiddens[i].Value().(*tensor.Dense)
 		output := prev.hiddens[i].Value().(*tensor.Dense)
-		output.CopyTo(input)
+		err := output.CopyTo(input)
+		if err != nil {
+			panic(err)
+		}
 	}
 	for i := range r.prevCells {
 		input := r.prevCells[i].Value().(*tensor.Dense)
 		output := prev.cells[i].Value().(*tensor.Dense)
-		output.CopyTo(input)
+		err := output.CopyTo(input)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -328,23 +339,27 @@ func (r *charRNN) reset() {
 func (r *charRNN) modeLearn() (err error) {
 	inputs := make([]*tensor.Dense, Steps-1)
 	outputs := make([]*tensor.Dense, Steps-1)
+	previous := make([]*lstmOut, Steps-1)
 	var cost, perplexity *Node
 
-	var prev *lstmOut
 	for i := 0; i < Steps-1; i++ {
 		var loss, perp *Node
 		// cache
 
-		inputs[i], prev, err = r.fwd(prev)
+		var prev *lstmOut
+		if i > 0 {
+			prev = previous[i-1]
+		}
+		inputs[i], previous[i], err = r.fwd(prev)
 		if err != nil {
 			return
 		}
 
-		logprob := Must(Neg(Must(Log(prev.probs))))
+		logprob := Must(Neg(Must(Log(previous[i].probs))))
 		outputs[i] = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.outputSize))
 		output := NewVector(r.g, tensor.Float32, WithShape(r.outputSize), WithValue(outputs[i]))
 		loss = Must(Mul(logprob, output))
-		log2prob := Must(Neg(Must(Log2(prev.probs))))
+		log2prob := Must(Neg(Must(Log2(previous[i].probs))))
 		perp = Must(Mul(log2prob, output))
 
 		if cost == nil {
@@ -363,6 +378,7 @@ func (r *charRNN) modeLearn() (err error) {
 
 	r.inputs = inputs
 	r.outputs = outputs
+	r.previous = previous
 	r.cost = cost
 	r.perplexity = perplexity
 
@@ -372,20 +388,19 @@ func (r *charRNN) modeLearn() (err error) {
 	}
 
 	r.machine = NewTapeMachine(r.g, BindDualValues(r.learnables()...))
-	r.lstm = prev
 	return
 }
 
 func (r *charRNN) modeInference() (err error) {
 	inputs := make([]*tensor.Dense, 1)
-	var lstm *lstmOut
-	inputs[0], lstm, err = r.fwd(nil)
+	previous := make([]*lstmOut, 1)
+	inputs[0], previous[0], err = r.fwd(nil)
 	if err != nil {
 		return
 	}
 	r.inputs = inputs
+	r.previous = previous
 	r.machine = NewTapeMachine(r.g)
-	r.lstm = lstm
 	return
 }
 
@@ -412,7 +427,8 @@ func (r *charRNN) predict() {
 			log.Printf("ERROR1 while predicting with %v %+v", r.machine, err)
 		}
 
-		sampledID := sample(r.lstm.probs.Value())
+		sampledID := sample(r.previous[0].probs.Value())
+		//fmt.Println(r.previous[0].probs.Value())
 		var char rune // hur hur varchar
 		if char = vocab[sampledID]; char == END {
 			break
@@ -423,7 +439,7 @@ func (r *charRNN) predict() {
 		}
 
 		sentence = append(sentence, char)
-		r.feedback()
+		r.feedback(0)
 		r.machine.Reset()
 	}
 
@@ -448,7 +464,7 @@ func (r *charRNN) predict() {
 			log.Printf("ERROR2 while predicting with %v: %+v", r.machine, err)
 		}
 
-		sampledID := maxSample(r.lstm.probs.Value())
+		sampledID := maxSample(r.previous[0].probs.Value())
 
 		var char rune // hur hur varchar
 		if char = vocab[sampledID]; char == END {
@@ -460,55 +476,57 @@ func (r *charRNN) predict() {
 		}
 
 		sentence2 = append(sentence2, char)
-		r.feedback()
+		r.feedback(0)
 		r.machine.Reset()
 	}
 
 	fmt.Printf("Sampled: %q; \nArgMax: %q\n", string(sentence), string(sentence2))
 }
 
-func (r *charRNN) learn(iter int, solver Solver) (retCost, retPerp float32, err error) {
+func (r *charRNN) learn(iter int, solver Solver) (retCost, retPerp []float64, err error) {
 	i := rand.Intn(len(sentences))
 	sentence := sentences[i]
+	n := len(sentence)
 
-	var n int
-	asRunes := []rune(sentence)
-	n = len(asRunes)
+	r.reset()
+	const steps = Steps - 1
+	for x := 0; x < n-steps; x++ {
+		for j := 0; j < steps; j++ {
+			source := sentence[x+j]
+			target := sentence[x+j+1]
 
-	for j := 0; j < n-1; j++ {
-		source := asRunes[j]
-		target := asRunes[j+1]
-
-		r.inputs[j].Zero()
-		r.inputs[j].SetF32(vocabIndex[source], 1.0)
-		r.outputs[j].Zero()
-		r.outputs[j].SetF32(vocabIndex[target], 1.0)
-	}
-
-	// f, _ := os.Create("FAIL.log")
-	// logger := log.New(f, "", 0)
-	// machine := NewLispMachine(g, WithLogger(logger), WithValueFmt("%-1.1s"), LogBothDir(), WithWatchlist())
-
-	if err = r.machine.RunAll(); err != nil {
-		if ctxerr, ok := err.(contextualError); ok {
-			ioutil.WriteFile("FAIL.dot", []byte(ctxerr.Node().RestrictedToDot(3, 3)), 0644)
-
+			r.inputs[j].Zero()
+			r.inputs[j].SetF32(vocabIndex[source], 1.0)
+			r.outputs[j].Zero()
+			r.outputs[j].SetF32(vocabIndex[target], 1.0)
 		}
-		return
-	}
-	defer r.machine.Reset()
 
-	err = solver.Step(r.learnables())
-	if err != nil {
-		return
-	}
+		// f, _ := os.Create("FAIL.log")
+		// logger := log.New(f, "", 0)
+		// machine := NewLispMachine(g, WithLogger(logger), WithValueFmt("%-1.1s"), LogBothDir(), WithWatchlist())
 
-	if sv, ok := r.perplexity.Value().(Scalar); ok {
-		v := sv.Data().(float32)
-		retPerp = float32(math.Pow(2, float64(v)/(float64(n)-1)))
-	}
-	if cv, ok := r.cost.Value().(Scalar); ok {
-		retCost = cv.Data().(float32)
+		if err = r.machine.RunAll(); err != nil {
+			if ctxerr, ok := err.(contextualError); ok {
+				ioutil.WriteFile("FAIL.dot", []byte(ctxerr.Node().RestrictedToDot(3, 3)), 0644)
+
+			}
+			return
+		}
+
+		err = solver.Step(r.learnables())
+		if err != nil {
+			return
+		}
+
+		if sv, ok := r.perplexity.Value().(Scalar); ok {
+			v := sv.Data().(float32)
+			retPerp = append(retPerp, math.Pow(2, float64(v)/(float64(n)-1)))
+		}
+		if cv, ok := r.cost.Value().(Scalar); ok {
+			retCost = append(retCost, float64(cv.Data().(float32)))
+		}
+		r.feedback(0)
+		r.machine.Reset()
 	}
 
 	return
