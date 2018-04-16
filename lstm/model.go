@@ -5,20 +5,11 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
-	"math/rand"
 	"strconv"
 
 	. "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
 )
-
-const (
-	// StdDev is the standard deviation for initialization
-	StdDev        = 0.08
-	embeddingSize = 10
-)
-
-var hiddenSizes = []int{10}
 
 type layer struct {
 	wix    Value
@@ -131,7 +122,7 @@ type lstmOut struct {
 	probs *Node
 }
 
-func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int) *model {
+func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int, stddev float64) *model {
 	m := new(model)
 	m.inputSize = inputSize
 	m.embeddingSize = embeddingSize
@@ -149,40 +140,42 @@ func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int) *
 
 		// input gate weights
 
-		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
-		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
+		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
 		l.bias_i = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// output gate weights
 
-		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
-		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
+		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
 		l.bias_o = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// forget gate weights
 
-		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
-		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
+		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
 		l.bias_f = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// cell write
 
-		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, prevSize)))
-		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, hiddenSize, hiddenSize)))
+		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
 		l.bias_c = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 	}
 
 	lastHiddenSize := hiddenSizes[len(hiddenSizes)-1]
 
-	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(Gaussian32(0.0, StdDev, outputSize, lastHiddenSize)))
+	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, outputSize, lastHiddenSize)))
 	m.bias_d = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
 
-	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(Gaussian32(0.0, StdDev, embeddingSize, inputSize)))
+	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(Gaussian32(0.0, stddev, embeddingSize, inputSize)))
 	return m
 }
 
 type charRNN struct {
 	*model
+	*Vocabulary
+
 	g  *ExprGraph
 	ls []*lstm
 
@@ -195,6 +188,7 @@ type charRNN struct {
 	prevHiddens Nodes
 	prevCells   Nodes
 
+	steps            int
 	inputs           []*tensor.Dense
 	outputs          []*tensor.Dense
 	previous         []*lstmOut
@@ -202,9 +196,10 @@ type charRNN struct {
 	machine          VM
 }
 
-func newCharRNN(m *model) *charRNN {
+func newCharRNN(m *model, vocabulary *Vocabulary) *charRNN {
 	r := new(charRNN)
 	r.model = m
+	r.Vocabulary = vocabulary
 	g := NewGraph()
 	r.g = g
 
@@ -336,13 +331,13 @@ func (r *charRNN) reset() {
 	}
 }
 
-func (r *charRNN) modeLearn() (err error) {
-	inputs := make([]*tensor.Dense, Steps-1)
-	outputs := make([]*tensor.Dense, Steps-1)
-	previous := make([]*lstmOut, Steps-1)
+func (r *charRNN) modeLearn(steps int) (err error) {
+	inputs := make([]*tensor.Dense, steps-1)
+	outputs := make([]*tensor.Dense, steps-1)
+	previous := make([]*lstmOut, steps-1)
 	var cost, perplexity *Node
 
-	for i := 0; i < Steps-1; i++ {
+	for i := 0; i < steps-1; i++ {
 		var loss, perp *Node
 		// cache
 
@@ -376,6 +371,7 @@ func (r *charRNN) modeLearn() (err error) {
 		}
 	}
 
+	r.steps = steps
 	r.inputs = inputs
 	r.outputs = outputs
 	r.previous = previous
@@ -412,7 +408,7 @@ func (r *charRNN) predict() {
 	for {
 		var id int
 		if len(sentence) > 0 {
-			id = vocabIndex[sentence[len(sentence)-1]]
+			id = r.Index[sentence[len(sentence)-1]]
 		}
 		r.inputs[0].Zero()
 		r.inputs[0].SetF32(id, 1.0)
@@ -430,7 +426,7 @@ func (r *charRNN) predict() {
 		sampledID := sample(r.previous[0].probs.Value())
 		//fmt.Println(r.previous[0].probs.Value())
 		var char rune // hur hur varchar
-		if char = vocab[sampledID]; char == END {
+		if char = r.List[sampledID]; char == END {
 			break
 		}
 
@@ -448,7 +444,7 @@ func (r *charRNN) predict() {
 	for {
 		var id int
 		if len(sentence2) > 0 {
-			id = vocabIndex[sentence2[len(sentence2)-1]]
+			id = r.Index[sentence2[len(sentence2)-1]]
 		}
 		r.inputs[0].Zero()
 		r.inputs[0].SetF32(id, 1.0)
@@ -467,7 +463,7 @@ func (r *charRNN) predict() {
 		sampledID := maxSample(r.previous[0].probs.Value())
 
 		var char rune // hur hur varchar
-		if char = vocab[sampledID]; char == END {
+		if char = r.List[sampledID]; char == END {
 			break
 		}
 
@@ -483,22 +479,20 @@ func (r *charRNN) predict() {
 	fmt.Printf("Sampled: %q; \nArgMax: %q\n", string(sentence), string(sentence2))
 }
 
-func (r *charRNN) learn(iter int, solver Solver) (retCost, retPerp []float64, err error) {
-	i := rand.Intn(len(sentences))
-	sentence := sentences[i]
+func (r *charRNN) learn(sentence []rune, iter int, solver Solver) (retCost, retPerp []float64, err error) {
 	n := len(sentence)
 
 	r.reset()
-	const steps = Steps - 1
+	steps := r.steps - 1
 	for x := 0; x < n-steps; x++ {
 		for j := 0; j < steps; j++ {
 			source := sentence[x+j]
 			target := sentence[x+j+1]
 
 			r.inputs[j].Zero()
-			r.inputs[j].SetF32(vocabIndex[source], 1.0)
+			r.inputs[j].SetF32(r.Index[source], 1.0)
 			r.outputs[j].Zero()
-			r.outputs[j].SetF32(vocabIndex[target], 1.0)
+			r.outputs[j].SetF32(r.Index[target], 1.0)
 		}
 
 		// f, _ := os.Create("FAIL.log")

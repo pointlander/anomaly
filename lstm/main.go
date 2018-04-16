@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,16 +29,6 @@ var memprofile = flag.String("memprofile", "", "write memory profile to this fil
 var softmaxTemperature = 1.0
 var maxCharGen = 100
 
-// various global variable inits
-var epochSize = -1
-var inputSize = -1
-var outputSize = -1
-
-// gradient update stuff
-var l2reg = 0.000001
-var learnrate = 0.00001
-var clipVal = 5.0
-
 type contextualError interface {
 	error
 	Node() *T.Node
@@ -49,17 +40,13 @@ func cleanup(sigChan chan os.Signal, doneChan chan bool, profiling bool) {
 	select {
 	case <-sigChan:
 		log.Println("EMERGENCY EXIT!")
-		graph()
-		if profiling {
-			pprof.StopCPUProfile()
-		}
-		os.Exit(1)
-
+		stop = true
 	case <-doneChan:
 		return
 	}
 }
 
+var stop = false
 var costValues, perpValues = make(plotter.Values, 0, 1000), make(plotter.Values, 0, 10000)
 
 func graph() {
@@ -111,7 +98,7 @@ func graph() {
 }
 
 func main() {
-	//Use(blase.Implementation())
+	//T.Use(blase.Implementation())
 	fmt.Println(T.WhichBLAS())
 	flag.Parse()
 	rand.Seed(1337)
@@ -142,26 +129,53 @@ func main() {
 	}
 	go cleanup(sigChan, doneChan, profiling)
 
-	m := NewLSTMModel(inputSize, embeddingSize, outputSize, hiddenSizes)
-	r := newCharRNN(m)
-	err := r.modeLearn()
+	steps := 8
+	var sentences [][]rune
+	sentencesRaw := strings.Split(corpus, "\n")
+	sentencesRaw = []string{strings.Join(sentencesRaw, " ")}
+	//sentencesRaw = []string{"abababababababababab"}
+	for _, s := range sentencesRaw {
+		s2 := []rune(strings.TrimSpace(s))
+		length := len(s2) + steps
+		s3 := make([]rune, length)
+		copy(s3[1:], s2)
+		s3[0] = START
+		for i := 1; i < steps; i++ {
+			s3[length-i] = END
+		}
+		sentences = append(sentences, s3)
+	}
+	vocabulary := NewVocabulary(sentences, 1)
+
+	inputSize := len(vocabulary.List)
+	embeddingSize := 10
+	outputSize := len(vocabulary.List)
+	hiddenSizes := []int{100, 100}
+	stddev := 0.08
+	m := NewLSTMModel(inputSize, embeddingSize, outputSize, hiddenSizes, stddev)
+	r := newCharRNN(m, vocabulary)
+	err := r.modeLearn(steps)
 	if err != nil {
 		panic(err)
 	}
 
-	predict := newCharRNN(m)
+	predict := newCharRNN(m, vocabulary)
 	err = predict.modeInference()
 	if err != nil {
 		panic(err)
 	}
 
+	learnrate := 0.000001
+	l2reg := 0.000001
+	clipVal := 5.0
 	solver := T.NewRMSPropSolver(T.WithLearnRate(learnrate), T.WithL2Reg(l2reg), T.WithClip(clipVal))
 	start := time.Now()
 	eStart := start
-	for i := 0; i <= 100000; i++ {
+	for i := 0; i <= 100000 && !stop; i++ {
 		// log.Printf("Iter: %d", i)
 		// _, _, err := m.run(i, solver)
-		cost, perp, err := r.learn(i, solver)
+		j := rand.Intn(len(sentences))
+		cost, perp, err := r.learn(sentences[j], i, solver)
 		if err != nil {
 			panic(fmt.Sprintf("%+v", err))
 		}
@@ -177,7 +191,7 @@ func main() {
 		costAvg /= float64(len(cost))
 		perpAvg /= float64(len(perp))
 
-		if i%10 == 0 {
+		if i%1 == 0 {
 			log.Printf("Going to predict now")
 			predict.predict()
 			log.Printf("Done predicting")
