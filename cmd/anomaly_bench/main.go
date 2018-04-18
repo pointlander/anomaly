@@ -15,6 +15,7 @@ import (
 	"gonum.org/v1/plot/vg"
 
 	"github.com/pointlander/anomaly"
+	"github.com/pointlander/anomaly/lstm"
 )
 
 const (
@@ -125,6 +126,48 @@ func Anomaly(seed int, factory anomaly.NetworkFactory) *TestResults {
 	}
 }
 
+// AnomalyLSTM tests the LSTM anomaly detection algorithm
+func AnomalyLSTM(seed int) *TestResults {
+	rndGenerator := rand.New(rand.NewSource(int64(seed)))
+	network := lstm.NewLSTM()
+
+	surprise := make(plotter.Values, Samples)
+	for i := 0; i < Samples; i++ {
+		object := anomaly.GenerateRandomJSON(rndGenerator)
+		input, err := json.Marshal(object)
+		if err != nil {
+			panic(err)
+		}
+		surprise[i] = float64(network.Train(input))
+	}
+	surprise = surprise[Cutoff:]
+
+	average, stddev := statistics(surprise)
+
+	results := make([]TestResult, len(Tests))
+	for i, test := range Tests {
+		var object map[string]interface{}
+		err := json.Unmarshal([]byte(test), &object)
+		if err != nil {
+			panic(err)
+		}
+		input, err := json.Marshal(object)
+		if err != nil {
+			panic(err)
+		}
+		e := float64(network.Train([]byte(input)))
+		results[i].Surprise = math.Abs((e - average) / stddev)
+	}
+
+	return &TestResults{
+		Seed:     seed,
+		Surprise: surprise,
+		Average:  average,
+		STDDEV:   stddev,
+		Results:  results,
+	}
+}
+
 // IsCorrect determines if a result is IsCorrect
 func (t *TestResults) IsCorrect() bool {
 	return t.Results[0].Surprise > t.Results[1].Surprise
@@ -207,6 +250,39 @@ func main() {
 		graph++
 	}
 
+	cutset := func(values *TestResults) []int {
+		set := make([]int, 0)
+		for i, v := range values.Surprise {
+			if math.Abs(v) > values.STDDEV {
+				set = append(set, i)
+			}
+		}
+		return set
+	}
+
+	cut := func(values *TestResults, set []int) *TestResults {
+		cut := make(plotter.Values, 0)
+		for i, v := range values.Surprise {
+			isIn := false
+			for _, x := range set {
+				if x == i {
+					isIn = true
+					break
+				}
+			}
+			if !isIn {
+				cut = append(cut, v)
+			}
+		}
+		return &TestResults{
+			Seed:     values.Seed,
+			Surprise: cut,
+			Average:  values.Average,
+			STDDEV:   values.STDDEV,
+			Results:  values.Results,
+		}
+	}
+
 	averageSimilarity := Anomaly(1, anomaly.NewAverageSimilarity)
 	histogram("Average Similarity Distribution", "average_similarity_distribution.png", averageSimilarity)
 	scatterPlot("Time", "Average Similarity", "average_similarity.png", nil, averageSimilarity)
@@ -225,6 +301,14 @@ func main() {
 	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similarity.png",
 		averageSimilarity, autoencoderError)
 	autoencoderError.Print()
+
+	lstmError := AnomalyLSTM(1)
+	set := cutset(lstmError)
+	histogram("LSTM Distribution", "lstm_distribution.png", cut(lstmError, set))
+	scatterPlot("Time", "LSTM", "lstm.png", nil, cut(lstmError, set))
+	scatterPlot("Average Similarity", "LSTM", "lstm_vs_average_similarity.png",
+		cut(averageSimilarity, set), cut(lstmError, set))
+	lstmError.Print()
 
 	test := func(factory anomaly.NetworkFactory) int {
 		count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1

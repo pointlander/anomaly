@@ -1,4 +1,4 @@
-package main
+package lstm
 
 const (
 	// START is the start symbol

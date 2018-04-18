@@ -1,6 +1,6 @@
-package main
+package lstm
 
-var corpus = `the company has, say, 6 months of runway
+var Corpus = `the company has, say, 6 months of runway
 or to put it more brutally, 6 months before they're out of business
 they expect to avoid that by raising more from investors
 that last sentence is the fatal one

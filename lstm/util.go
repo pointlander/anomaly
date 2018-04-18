@@ -1,4 +1,4 @@
-package main
+package lstm
 
 import (
 	. "gorgonia.org/gorgonia"

@@ -6,6 +6,8 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime/pprof"
@@ -18,23 +20,11 @@ import (
 	"gonum.org/v1/plot/vg"
 	T "gorgonia.org/gorgonia"
 
-	"net/http"
-	_ "net/http/pprof"
+	"github.com/pointlander/anomaly/lstm"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write memory profile to this file")
-
-// prediction params
-var softmaxTemperature = 1.0
-var maxCharGen = 100
-
-type contextualError interface {
-	error
-	Node() *T.Node
-	Value() T.Value
-	InstructionID() int
-}
 
 func cleanup(sigChan chan os.Signal, doneChan chan bool, profiling bool) {
 	select {
@@ -131,7 +121,7 @@ func main() {
 
 	steps := 8
 	var sentences [][]rune
-	sentencesRaw := strings.Split(corpus, "\n")
+	sentencesRaw := strings.Split(lstm.Corpus, "\n")
 	sentencesRaw = []string{strings.Join(sentencesRaw, " ")}
 	//sentencesRaw = []string{"abababababababababab"}
 	for _, s := range sentencesRaw {
@@ -139,28 +129,28 @@ func main() {
 		length := len(s2) + steps
 		s3 := make([]rune, length)
 		copy(s3[1:], s2)
-		s3[0] = START
+		s3[0] = lstm.START
 		for i := 1; i < steps; i++ {
-			s3[length-i] = END
+			s3[length-i] = lstm.END
 		}
 		sentences = append(sentences, s3)
 	}
-	vocabulary := NewVocabulary(sentences, 1)
+	vocabulary := lstm.NewVocabulary(sentences, 1)
 
 	inputSize := len(vocabulary.List)
 	embeddingSize := 10
 	outputSize := len(vocabulary.List)
 	hiddenSizes := []int{100, 100}
 	stddev := 0.08
-	m := NewLSTMModel(inputSize, embeddingSize, outputSize, hiddenSizes, stddev)
-	r := newCharRNN(m, vocabulary)
-	err := r.modeLearn(steps)
+	m := lstm.NewLSTMModel(inputSize, embeddingSize, outputSize, hiddenSizes, stddev)
+	r := lstm.NewCharRNN(m, vocabulary)
+	err := r.ModeLearn(steps)
 	if err != nil {
 		panic(err)
 	}
 
-	predict := newCharRNN(m, vocabulary)
-	err = predict.modeInference()
+	predict := lstm.NewCharRNN(m, vocabulary)
+	err = predict.ModeInference()
 	if err != nil {
 		panic(err)
 	}
@@ -175,7 +165,7 @@ func main() {
 		// log.Printf("Iter: %d", i)
 		// _, _, err := m.run(i, solver)
 		j := rand.Intn(len(sentences))
-		cost, perp, err := r.learn(sentences[j], i, solver)
+		cost, perp, err := r.Learn(sentences[j], i, solver)
 		if err != nil {
 			panic(fmt.Sprintf("%+v", err))
 		}
@@ -193,7 +183,7 @@ func main() {
 
 		if i%1 == 0 {
 			log.Printf("Going to predict now")
-			predict.predict()
+			predict.Predict()
 			log.Printf("Done predicting")
 
 			timetaken := time.Since(eStart)
@@ -217,5 +207,4 @@ func main() {
 
 	end := time.Now()
 	fmt.Printf("%v", end.Sub(start))
-	fmt.Printf("%+3.3s", m.embedding)
 }

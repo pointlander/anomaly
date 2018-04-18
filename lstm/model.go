@@ -1,4 +1,4 @@
-package main
+package lstm
 
 import (
 	"fmt"
@@ -10,6 +10,17 @@ import (
 	. "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
 )
+
+// prediction params
+var softmaxTemperature = 1.0
+var maxCharGen = 100
+
+type contextualError interface {
+	error
+	Node() *Node
+	Value() Value
+	InstructionID() int
+}
 
 type layer struct {
 	wix    Value
@@ -196,7 +207,7 @@ type charRNN struct {
 	machine          VM
 }
 
-func newCharRNN(m *model, vocabulary *Vocabulary) *charRNN {
+func NewCharRNN(m *model, vocabulary *Vocabulary) *charRNN {
 	r := new(charRNN)
 	r.model = m
 	r.Vocabulary = vocabulary
@@ -331,7 +342,7 @@ func (r *charRNN) reset() {
 	}
 }
 
-func (r *charRNN) modeLearn(steps int) (err error) {
+func (r *charRNN) ModeLearn(steps int) (err error) {
 	inputs := make([]*tensor.Dense, steps-1)
 	outputs := make([]*tensor.Dense, steps-1)
 	previous := make([]*lstmOut, steps-1)
@@ -387,7 +398,7 @@ func (r *charRNN) modeLearn(steps int) (err error) {
 	return
 }
 
-func (r *charRNN) modeInference() (err error) {
+func (r *charRNN) ModeInference() (err error) {
 	inputs := make([]*tensor.Dense, 1)
 	previous := make([]*lstmOut, 1)
 	inputs[0], previous[0], err = r.fwd(nil)
@@ -400,7 +411,7 @@ func (r *charRNN) modeInference() (err error) {
 	return
 }
 
-func (r *charRNN) predict() {
+func (r *charRNN) Predict() {
 	var sentence []rune
 	var err error
 
@@ -479,7 +490,7 @@ func (r *charRNN) predict() {
 	fmt.Printf("Sampled: %q; \nArgMax: %q\n", string(sentence), string(sentence2))
 }
 
-func (r *charRNN) learn(sentence []rune, iter int, solver Solver) (retCost, retPerp []float64, err error) {
+func (r *charRNN) Learn(sentence []rune, iter int, solver Solver) (retCost, retPerp []float64, err error) {
 	n := len(sentence)
 
 	r.reset()
