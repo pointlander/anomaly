@@ -33,3 +33,6 @@ https://github.com/owulveryck/lstm
 https://news.ycombinator.com/item?id=16785402  
 https://distill.pub/2016/augmented-rnns/  
 
+# Mixture Density Networks
+http://blog.otoro.net/2015/11/24/mixture-density-networks-with-tensorflow/  
+
