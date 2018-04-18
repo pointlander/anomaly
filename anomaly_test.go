@@ -5,8 +5,11 @@
 package anomaly
 
 import (
+	"encoding/json"
 	"math/rand"
 	"testing"
+
+	"github.com/pointlander/anomaly/lstm"
 )
 
 func BenchmarkLFSR(b *testing.B) {
@@ -82,12 +85,12 @@ func BenchmarkAverageSimilarity(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		object := GenerateRandomJSON(rnd)
+		b.StartTimer()
 		vector := vectorizer.Vectorize(object)
 		unit := Normalize(vector)
 		if len(network.(*AverageSimilarity).Vectors) > 1000 {
 			network.(*AverageSimilarity).Vectors = network.(*AverageSimilarity).Vectors[:1000]
 		}
-		b.StartTimer()
 		network.Train(unit)
 	}
 }
@@ -100,9 +103,9 @@ func BenchmarkNeuron(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		object := GenerateRandomJSON(rnd)
+		b.StartTimer()
 		vector := vectorizer.Vectorize(object)
 		unit := Normalize(vector)
-		b.StartTimer()
 		network.Train(unit)
 	}
 }
@@ -115,9 +118,25 @@ func BenchmarkAutoencoder(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		object := GenerateRandomJSON(rnd)
+		b.StartTimer()
 		vector := vectorizer.Vectorize(object)
 		unit := Normalize(vector)
-		b.StartTimer()
 		network.Train(unit)
+	}
+}
+
+func BenchmarkLSTM(b *testing.B) {
+	rnd := rand.New(rand.NewSource(1))
+	network := lstm.NewLSTM()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		object := GenerateRandomJSON(rnd)
+		data, err := json.Marshal(object)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+		network.Train(data)
 	}
 }
