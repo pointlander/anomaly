@@ -88,9 +88,6 @@ func BenchmarkAverageSimilarity(b *testing.B) {
 		b.StartTimer()
 		vector := vectorizer.Vectorize(object)
 		unit := Normalize(vector)
-		if len(network.(*AverageSimilarity).Vectors) > 1000 {
-			network.(*AverageSimilarity).Vectors = network.(*AverageSimilarity).Vectors[:1000]
-		}
 		network.Train(unit)
 	}
 }
