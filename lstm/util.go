@@ -1,11 +1,11 @@
 package lstm
 
 import (
-	. "gorgonia.org/gorgonia"
+	G "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
 )
 
-func sample(val Value) int {
+func sample(val G.Value) int {
 	var t tensor.Tensor
 	var ok bool
 	if t, ok = val.(tensor.Tensor); !ok {
@@ -15,7 +15,7 @@ func sample(val Value) int {
 	return tensor.SampleIndex(t)
 }
 
-func maxSample(val Value) int {
+func maxSample(val G.Value) int {
 	var t tensor.Tensor
 	var ok bool
 	if t, ok = val.(tensor.Tensor); !ok {

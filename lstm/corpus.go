@@ -1,5 +1,6 @@
 package lstm
 
+// Corpus data for training a recurrent neural network on
 var Corpus = `the company has, say, 6 months of runway
 or to put it more brutally, 6 months before they're out of business
 they expect to avoid that by raising more from investors

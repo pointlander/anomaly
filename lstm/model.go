@@ -7,7 +7,7 @@ import (
 	"math"
 	"strconv"
 
-	. "gorgonia.org/gorgonia"
+	G "gorgonia.org/gorgonia"
 	"gorgonia.org/tensor"
 )
 
@@ -17,106 +17,106 @@ var maxCharGen = 100
 
 type contextualError interface {
 	error
-	Node() *Node
-	Value() Value
+	Node() *G.Node
+	Value() G.Value
 	InstructionID() int
 }
 
 type layer struct {
-	wix    Value
-	wih    Value
-	bias_i Value
+	wix   G.Value
+	wih   G.Value
+	biasI G.Value
 
-	wfx    Value
-	wfh    Value
-	bias_f Value
+	wfx   G.Value
+	wfh   G.Value
+	biasF G.Value
 
-	wox    Value
-	woh    Value
-	bias_o Value
+	wox   G.Value
+	woh   G.Value
+	biasO G.Value
 
-	wcx    Value
-	wch    Value
-	bias_c Value
+	wcx   G.Value
+	wch   G.Value
+	biasC G.Value
 }
 
 type lstm struct {
-	wix    *Node
-	wih    *Node
-	bias_i *Node
+	wix   *G.Node
+	wih   *G.Node
+	biasI *G.Node
 
-	wfx    *Node
-	wfh    *Node
-	bias_f *Node
+	wfx   *G.Node
+	wfh   *G.Node
+	biasF *G.Node
 
-	wox    *Node
-	woh    *Node
-	bias_o *Node
+	wox   *G.Node
+	woh   *G.Node
+	biasO *G.Node
 
-	wcx    *Node
-	wch    *Node
-	bias_c *Node
+	wcx   *G.Node
+	wch   *G.Node
+	biasC *G.Node
 }
 
-func newLSTMLayer(g *ExprGraph, l *layer, name string) *lstm {
+func newLSTMLayer(g *G.ExprGraph, l *layer, name string) *lstm {
 	retVal := new(lstm)
-	retVal.wix = NodeFromAny(g, l.wix, WithName("wix_"+name))
-	retVal.wih = NodeFromAny(g, l.wih, WithName("wih_"+name))
-	retVal.bias_i = NodeFromAny(g, l.bias_i, WithName("bias_i_"+name))
+	retVal.wix = G.NodeFromAny(g, l.wix, G.WithName("wix_"+name))
+	retVal.wih = G.NodeFromAny(g, l.wih, G.WithName("wih_"+name))
+	retVal.biasI = G.NodeFromAny(g, l.biasI, G.WithName("bias_i_"+name))
 
-	retVal.wfx = NodeFromAny(g, l.wfx, WithName("wfx_"+name))
-	retVal.wfh = NodeFromAny(g, l.wfh, WithName("wfh_"+name))
-	retVal.bias_f = NodeFromAny(g, l.bias_f, WithName("bias_f_"+name))
+	retVal.wfx = G.NodeFromAny(g, l.wfx, G.WithName("wfx_"+name))
+	retVal.wfh = G.NodeFromAny(g, l.wfh, G.WithName("wfh_"+name))
+	retVal.biasF = G.NodeFromAny(g, l.biasF, G.WithName("bias_f_"+name))
 
-	retVal.wox = NodeFromAny(g, l.wox, WithName("wox_"+name))
-	retVal.woh = NodeFromAny(g, l.woh, WithName("woh_"+name))
-	retVal.bias_o = NodeFromAny(g, l.bias_o, WithName("bias_o_"+name))
+	retVal.wox = G.NodeFromAny(g, l.wox, G.WithName("wox_"+name))
+	retVal.woh = G.NodeFromAny(g, l.woh, G.WithName("woh_"+name))
+	retVal.biasO = G.NodeFromAny(g, l.biasO, G.WithName("bias_o_"+name))
 
-	retVal.wcx = NodeFromAny(g, l.wcx, WithName("wcx_"+name))
-	retVal.wch = NodeFromAny(g, l.wch, WithName("wch_"+name))
-	retVal.bias_c = NodeFromAny(g, l.bias_c, WithName("bias_c_"+name))
+	retVal.wcx = G.NodeFromAny(g, l.wcx, G.WithName("wcx_"+name))
+	retVal.wch = G.NodeFromAny(g, l.wch, G.WithName("wch_"+name))
+	retVal.biasC = G.NodeFromAny(g, l.biasC, G.WithName("bias_c_"+name))
 	return retVal
 }
 
-func (l *lstm) fwd(inputVector, prevHidden, prevCell *Node) (hidden, cell *Node) {
-	var h0, h1, inputGate *Node
-	h0 = Must(Mul(l.wix, inputVector))
-	h1 = Must(Mul(l.wih, prevHidden))
-	inputGate = Must(Sigmoid(Must(Add(Must(Add(h0, h1)), l.bias_i))))
+func (l *lstm) fwd(inputVector, prevHidden, prevCell *G.Node) (hidden, cell *G.Node) {
+	var h0, h1, inputGate *G.Node
+	h0 = G.Must(G.Mul(l.wix, inputVector))
+	h1 = G.Must(G.Mul(l.wih, prevHidden))
+	inputGate = G.Must(G.Sigmoid(G.Must(G.Add(G.Must(G.Add(h0, h1)), l.biasI))))
 
-	var h2, h3, forgetGate *Node
-	h2 = Must(Mul(l.wfx, inputVector))
-	h3 = Must(Mul(l.wfh, prevHidden))
-	forgetGate = Must(Sigmoid(Must(Add(Must(Add(h2, h3)), l.bias_f))))
+	var h2, h3, forgetGate *G.Node
+	h2 = G.Must(G.Mul(l.wfx, inputVector))
+	h3 = G.Must(G.Mul(l.wfh, prevHidden))
+	forgetGate = G.Must(G.Sigmoid(G.Must(G.Add(G.Must(G.Add(h2, h3)), l.biasF))))
 
-	var h4, h5, outputGate *Node
-	h4 = Must(Mul(l.wox, inputVector))
-	h5 = Must(Mul(l.woh, prevHidden))
-	outputGate = Must(Sigmoid(Must(Add(Must(Add(h4, h5)), l.bias_o))))
+	var h4, h5, outputGate *G.Node
+	h4 = G.Must(G.Mul(l.wox, inputVector))
+	h5 = G.Must(G.Mul(l.woh, prevHidden))
+	outputGate = G.Must(G.Sigmoid(G.Must(G.Add(G.Must(G.Add(h4, h5)), l.biasO))))
 
-	var h6, h7, cellWrite *Node
-	h6 = Must(Mul(l.wcx, inputVector))
-	h7 = Must(Mul(l.wch, prevHidden))
-	cellWrite = Must(Tanh(Must(Add(Must(Add(h6, h7)), l.bias_c))))
+	var h6, h7, cellWrite *G.Node
+	h6 = G.Must(G.Mul(l.wcx, inputVector))
+	h7 = G.Must(G.Mul(l.wch, prevHidden))
+	cellWrite = G.Must(G.Tanh(G.Must(G.Add(G.Must(G.Add(h6, h7)), l.biasC))))
 
 	// cell activations
-	var retain, write *Node
-	retain = Must(HadamardProd(forgetGate, prevCell))
-	write = Must(HadamardProd(inputGate, cellWrite))
-	cell = Must(Add(retain, write))
-	hidden = Must(HadamardProd(outputGate, Must(Tanh(cell))))
+	var retain, write *G.Node
+	retain = G.Must(G.HadamardProd(forgetGate, prevCell))
+	write = G.Must(G.HadamardProd(inputGate, cellWrite))
+	cell = G.Must(G.Add(retain, write))
+	hidden = G.Must(G.HadamardProd(outputGate, G.Must(G.Tanh(cell))))
 	return
 }
 
-// single layer example
-type model struct {
+// Model single LSTM layer
+type Model struct {
 	ls []*layer
 
 	// decoder
-	whd    Value
-	bias_d Value
+	whd   G.Value
+	biasD G.Value
 
-	embedding Value
+	embedding G.Value
 
 	// metadata
 	inputSize, embeddingSize, outputSize int
@@ -127,14 +127,15 @@ type model struct {
 }
 
 type lstmOut struct {
-	hiddens Nodes
-	cells   Nodes
+	hiddens G.Nodes
+	cells   G.Nodes
 
-	probs *Node
+	probs *G.Node
 }
 
-func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int, stddev float64) *model {
-	m := new(model)
+// NewLSTMModel creates a new LSTM model
+func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int, stddev float64) *Model {
+	m := new(Model)
 	m.inputSize = inputSize
 	m.embeddingSize = embeddingSize
 	m.outputSize = outputSize
@@ -151,88 +152,90 @@ func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int, s
 
 		// input gate weights
 
-		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
-		l.bias_i = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
+		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.biasI = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// output gate weights
 
-		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
-		l.bias_o = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
+		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.biasO = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// forget gate weights
 
-		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
-		l.bias_f = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
+		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.biasF = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// cell write
 
-		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
-		l.bias_c = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
+		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
+		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.biasC = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 	}
 
 	lastHiddenSize := hiddenSizes[len(hiddenSizes)-1]
 
-	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(Gaussian32(0.0, stddev, outputSize, lastHiddenSize)))
-	m.bias_d = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
+	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, outputSize, lastHiddenSize)))
+	m.biasD = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
 
-	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(Gaussian32(0.0, stddev, embeddingSize, inputSize)))
+	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, embeddingSize, inputSize)))
 	return m
 }
 
-type charRNN struct {
-	*model
+// CharRNN is a LSTM that takes characters as input
+type CharRNN struct {
+	*Model
 	*Vocabulary
 
-	g  *ExprGraph
+	g  *G.ExprGraph
 	ls []*lstm
 
 	// decoder
-	whd    *Node
-	bias_d *Node
+	whd   *G.Node
+	biasD *G.Node
 
-	embedding *Node
+	embedding *G.Node
 
-	prevHiddens Nodes
-	prevCells   Nodes
+	prevHiddens G.Nodes
+	prevCells   G.Nodes
 
 	steps            int
 	inputs           []*tensor.Dense
 	outputs          []*tensor.Dense
 	previous         []*lstmOut
-	cost, perplexity *Node
-	machine          VM
+	cost, perplexity *G.Node
+	machine          G.VM
 }
 
-func NewCharRNN(m *model, vocabulary *Vocabulary) *charRNN {
-	r := new(charRNN)
-	r.model = m
+// NewCharRNN create a new LSTM for characters as inputs
+func NewCharRNN(m *Model, vocabulary *Vocabulary) *CharRNN {
+	r := new(CharRNN)
+	r.Model = m
 	r.Vocabulary = vocabulary
-	g := NewGraph()
+	g := G.NewGraph()
 	r.g = g
 
-	var hiddens, cells Nodes
+	var hiddens, cells G.Nodes
 	for depth := 0; depth < len(m.hiddenSizes); depth++ {
 		hiddenSize := m.hiddenSizes[depth]
 		layerID := strconv.Itoa(depth)
-		l := newLSTMLayer(r.g, r.model.ls[depth], layerID)
+		l := newLSTMLayer(r.g, r.Model.ls[depth], layerID)
 		r.ls = append(r.ls, l)
 
 		// this is to simulate a default "previous" state
 		hiddenT := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 		cellT := tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
-		hidden := NewVector(g, Float32, WithName("prevHidden_"+layerID), WithShape(hiddenSize), WithValue(hiddenT))
-		cell := NewVector(g, Float32, WithName("prevCell_"+layerID), WithShape(hiddenSize), WithValue(cellT))
+		hidden := G.NewVector(g, G.Float32, G.WithName("prevHidden_"+layerID), G.WithShape(hiddenSize), G.WithValue(hiddenT))
+		cell := G.NewVector(g, G.Float32, G.WithName("prevCell_"+layerID), G.WithShape(hiddenSize), G.WithValue(cellT))
 
 		hiddens = append(hiddens, hidden)
 		cells = append(cells, cell)
 	}
-	r.whd = NodeFromAny(r.g, m.whd, WithName("whd"))
-	r.bias_d = NodeFromAny(r.g, m.bias_d, WithName("bias_d"))
-	r.embedding = NodeFromAny(r.g, m.embedding, WithName("Embedding"))
+	r.whd = G.NodeFromAny(r.g, m.whd, G.WithName("whd"))
+	r.biasD = G.NodeFromAny(r.g, m.biasD, G.WithName("bias_d"))
+	r.embedding = G.NodeFromAny(r.g, m.embedding, G.WithName("Embedding"))
 
 	// these are to simulate a previous state
 	r.prevHiddens = hiddens
@@ -241,33 +244,33 @@ func NewCharRNN(m *model, vocabulary *Vocabulary) *charRNN {
 	return r
 }
 
-func (r *charRNN) learnables() (retVal Nodes) {
+func (r *CharRNN) learnables() (retVal G.Nodes) {
 	for _, l := range r.ls {
-		lin := Nodes{
+		lin := G.Nodes{
 			l.wix,
 			l.wih,
-			l.bias_i,
+			l.biasI,
 			l.wfx,
 			l.wfh,
-			l.bias_f,
+			l.biasF,
 			l.wox,
 			l.woh,
-			l.bias_o,
+			l.biasO,
 			l.wcx,
 			l.wch,
-			l.bias_c,
+			l.biasC,
 		}
 
 		retVal = append(retVal, lin...)
 	}
 
 	retVal = append(retVal, r.whd)
-	retVal = append(retVal, r.bias_d)
+	retVal = append(retVal, r.biasD)
 	retVal = append(retVal, r.embedding)
 	return
 }
 
-func (r *charRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut, err error) {
+func (r *CharRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut, err error) {
 	prevHiddens := r.prevHiddens
 	prevCells := r.prevCells
 	if prev != nil {
@@ -275,13 +278,13 @@ func (r *charRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut
 		prevCells = prev.cells
 	}
 
-	var hiddens, cells Nodes
+	var hiddens, cells G.Nodes
 	for i, l := range r.ls {
-		var inputVector *Node
+		var inputVector *G.Node
 		if i == 0 {
 			inputTensor = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.inputSize))
-			input := NewVector(r.g, tensor.Float32, WithShape(r.inputSize), WithValue(inputTensor))
-			inputVector = Must(Mul(r.embedding, input))
+			input := G.NewVector(r.g, tensor.Float32, G.WithShape(r.inputSize), G.WithValue(inputTensor))
+			inputVector = G.Must(G.Mul(r.embedding, input))
 		} else {
 			inputVector = hiddens[i-1]
 		}
@@ -293,17 +296,17 @@ func (r *charRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut
 		cells = append(cells, cell)
 	}
 	lastHidden := hiddens[len(hiddens)-1]
-	var output *Node
-	if output, err = Mul(r.whd, lastHidden); err == nil {
-		if output, err = Add(output, r.bias_d); err != nil {
-			WithName("LAST HIDDEN")(lastHidden)
+	var output *G.Node
+	if output, err = G.Mul(r.whd, lastHidden); err == nil {
+		if output, err = G.Add(output, r.biasD); err != nil {
+			G.WithName("LAST HIDDEN")(lastHidden)
 			ioutil.WriteFile("err.dot", []byte(lastHidden.RestrictedToDot(3, 10)), 0644)
 			panic(fmt.Sprintf("ERROR: %v", err))
 		}
 	}
 
-	var probs *Node
-	probs = Must(SoftMax(output))
+	var probs *G.Node
+	probs = G.Must(G.SoftMax(output))
 
 	retVal = &lstmOut{
 		hiddens: hiddens,
@@ -313,7 +316,7 @@ func (r *charRNN) fwd(prev *lstmOut) (inputTensor *tensor.Dense, retVal *lstmOut
 	return
 }
 
-func (r *charRNN) feedback(tap int) {
+func (r *CharRNN) feedback(tap int) {
 	prev := r.previous[tap]
 	for i := range r.prevHiddens {
 		input := r.prevHiddens[i].Value().(*tensor.Dense)
@@ -333,7 +336,7 @@ func (r *charRNN) feedback(tap int) {
 	}
 }
 
-func (r *charRNN) reset() {
+func (r *CharRNN) reset() {
 	for i := range r.prevHiddens {
 		r.prevHiddens[i].Value().(*tensor.Dense).Zero()
 	}
@@ -342,14 +345,15 @@ func (r *charRNN) reset() {
 	}
 }
 
-func (r *charRNN) ModeLearn(steps int) (err error) {
+// ModeLearn puts the CharRNN into a learning mode
+func (r *CharRNN) ModeLearn(steps int) (err error) {
 	inputs := make([]*tensor.Dense, steps-1)
 	outputs := make([]*tensor.Dense, steps-1)
 	previous := make([]*lstmOut, steps-1)
-	var cost, perplexity *Node
+	var cost, perplexity *G.Node
 
 	for i := 0; i < steps-1; i++ {
-		var loss, perp *Node
+		var loss, perp *G.Node
 		// cache
 
 		var prev *lstmOut
@@ -361,24 +365,24 @@ func (r *charRNN) ModeLearn(steps int) (err error) {
 			return
 		}
 
-		logprob := Must(Neg(Must(Log(previous[i].probs))))
+		logprob := G.Must(G.Neg(G.Must(G.Log(previous[i].probs))))
 		outputs[i] = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.outputSize))
-		output := NewVector(r.g, tensor.Float32, WithShape(r.outputSize), WithValue(outputs[i]))
-		loss = Must(Mul(logprob, output))
-		log2prob := Must(Neg(Must(Log2(previous[i].probs))))
-		perp = Must(Mul(log2prob, output))
+		output := G.NewVector(r.g, tensor.Float32, G.WithShape(r.outputSize), G.WithValue(outputs[i]))
+		loss = G.Must(G.Mul(logprob, output))
+		log2prob := G.Must(G.Neg(G.Must(G.Log2(previous[i].probs))))
+		perp = G.Must(G.Mul(log2prob, output))
 
 		if cost == nil {
 			cost = loss
 		} else {
-			cost = Must(Add(cost, loss))
+			cost = G.Must(G.Add(cost, loss))
 		}
-		WithName("Cost")(cost)
+		G.WithName("Cost")(cost)
 
 		if perplexity == nil {
 			perplexity = perp
 		} else {
-			perplexity = Must(Add(perplexity, perp))
+			perplexity = G.Must(G.Add(perplexity, perp))
 		}
 	}
 
@@ -389,16 +393,17 @@ func (r *charRNN) ModeLearn(steps int) (err error) {
 	r.cost = cost
 	r.perplexity = perplexity
 
-	_, err = Grad(cost, r.learnables()...)
+	_, err = G.Grad(cost, r.learnables()...)
 	if err != nil {
 		return
 	}
 
-	r.machine = NewTapeMachine(r.g, BindDualValues(r.learnables()...))
+	r.machine = G.NewTapeMachine(r.g, G.BindDualValues(r.learnables()...))
 	return
 }
 
-func (r *charRNN) ModeInference() (err error) {
+// ModeInference puts the CharRNN into inference mode
+func (r *CharRNN) ModeInference() (err error) {
 	inputs := make([]*tensor.Dense, 1)
 	previous := make([]*lstmOut, 1)
 	inputs[0], previous[0], err = r.fwd(nil)
@@ -407,11 +412,12 @@ func (r *charRNN) ModeInference() (err error) {
 	}
 	r.inputs = inputs
 	r.previous = previous
-	r.machine = NewTapeMachine(r.g)
+	r.machine = G.NewTapeMachine(r.g)
 	return
 }
 
-func (r *charRNN) Predict() {
+// Predict genreates a string
+func (r *CharRNN) Predict() {
 	var sentence []rune
 	var err error
 
@@ -490,7 +496,8 @@ func (r *charRNN) Predict() {
 	fmt.Printf("Sampled: %q; \nArgMax: %q\n", string(sentence), string(sentence2))
 }
 
-func (r *charRNN) Learn(sentence []rune, iter int, solver Solver) (retCost, retPerp []float64, err error) {
+// Learn learns strings
+func (r *CharRNN) Learn(sentence []rune, iter int, solver G.Solver) (retCost, retPerp []float64, err error) {
 	n := len(sentence)
 
 	r.reset()
@@ -523,11 +530,11 @@ func (r *charRNN) Learn(sentence []rune, iter int, solver Solver) (retCost, retP
 			return
 		}
 
-		if sv, ok := r.perplexity.Value().(Scalar); ok {
+		if sv, ok := r.perplexity.Value().(G.Scalar); ok {
 			v := sv.Data().(float32)
 			retPerp = append(retPerp, math.Pow(2, float64(v)/(float64(n)-1)))
 		}
-		if cv, ok := r.cost.Value().(Scalar); ok {
+		if cv, ok := r.cost.Value().(G.Scalar); ok {
 			retCost = append(retCost, float64(cv.Data().(float32)))
 		}
 		r.feedback(0)

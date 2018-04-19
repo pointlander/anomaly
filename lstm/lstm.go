@@ -8,8 +8,8 @@ import (
 
 // LSTM is a LSTM based anomaly detection engine
 type LSTM struct {
-	*model
-	learner *charRNN
+	*Model
+	learner *CharRNN
 	solver  *G.RMSPropSolver
 }
 
@@ -37,7 +37,7 @@ func NewLSTM() *LSTM {
 	solver := G.NewRMSPropSolver(G.WithLearnRate(learnrate), G.WithL2Reg(l2reg), G.WithClip(clipVal))
 
 	return &LSTM{
-		model:   lstm,
+		Model:   lstm,
 		learner: learner,
 		solver:  solver,
 	}
