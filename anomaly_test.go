@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/pointlander/anomaly/gru"
 	"github.com/pointlander/anomaly/lstm"
 )
 
@@ -125,6 +126,22 @@ func BenchmarkAutoencoder(b *testing.B) {
 func BenchmarkLSTM(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
 	network := lstm.NewLSTM()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		object := GenerateRandomJSON(rnd)
+		data, err := json.Marshal(object)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+		network.Train(data)
+	}
+}
+
+func BenchmarkGRU(b *testing.B) {
+	rnd := rand.New(rand.NewSource(1))
+	network := gru.NewGRU()
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
