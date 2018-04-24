@@ -174,4 +174,8 @@ The LSTM does correctly determine the surprise metrics of the above two test JSO
 An anomaly detection engine has been demonstrated. The first two stage algorithm is made up of two components: a vectorizer and an algorithm for computing surprise. After vectorization the single neuron and autoencoder algorithms have a fixed cost for determining if a JSON document is an anomaly. The single neuron and autoencoder methods are suitable for taking a real time learning approach. The single neuron method is faster than the other two methods. The LSTM based algorithm works, but it is slower than the other approaches.
 
 ## Future work
-The LSTM algorithm could be used to replace the vectorizer of the two stage algorithm. In theory this should result in more optimal vectorization. Instead of a LSTM based recurrent neural network, a [GRU](https://en.wikipedia.org/wiki/Gated_recurrent_unit) based recurrent neural network could be used. The GRU would be faster than the LSTM.
+- [ ] The LSTM algorithm could be used to replace the vectorizer of the two stage algorithm. In theory this should result in more optimal vectorization.
+- [ ] Instead of a LSTM based recurrent neural network, a [GRU](https://en.wikipedia.org/wiki/Gated_recurrent_unit) based recurrent neural network could be used. The GRU would be faster than the LSTM.
+- [ ] Use a recurrent neural network to create a heat map of the JSON document. This would show the parts that are anomalies.
+- [ ] [Ensemble learning](https://en.wikipedia.org/wiki/Ensemble_learning) could be used to combine multiple algorithms.
+- [ ] Use [models for adaptive arithmetic coding](https://fgiesen.wordpress.com/2015/05/26/models-for-adaptive-arithmetic-coding/) for anomaly detection.
