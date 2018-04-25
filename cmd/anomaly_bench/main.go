@@ -15,7 +15,6 @@ import (
 	"gonum.org/v1/plot/vg"
 
 	"github.com/pointlander/anomaly"
-	"github.com/pointlander/anomaly/lstm"
 )
 
 const (
@@ -126,10 +125,10 @@ func Anomaly(seed int, factory anomaly.NetworkFactory) *TestResults {
 	}
 }
 
-// AnomalyLSTM tests the LSTM anomaly detection algorithm
-func AnomalyLSTM(seed int) *TestResults {
+// AnomalyRecurrent tests the LSTM anomaly detection algorithm
+func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory) *TestResults {
 	rndGenerator := rand.New(rand.NewSource(int64(seed)))
-	network := lstm.NewLSTM()
+	network := factory()
 
 	surprise := make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
@@ -302,13 +301,19 @@ func main() {
 		averageSimilarity, autoencoderError)
 	autoencoderError.Print()
 
-	lstmError := AnomalyLSTM(1)
+	lstmError := AnomalyRecurrent(1, anomaly.NewLSTM)
 	set := cutset(lstmError)
 	histogram("LSTM Distribution", "lstm_distribution.png", cut(lstmError, set))
 	scatterPlot("Time", "LSTM", "lstm.png", nil, cut(lstmError, set))
 	scatterPlot("Average Similarity", "LSTM", "lstm_vs_average_similarity.png",
 		cut(averageSimilarity, set), cut(lstmError, set))
 	lstmError.Print()
+
+	gruError := AnomalyRecurrent(1, anomaly.NewGRU)
+	histogram("GRU Distribution", "gru_distribution.png", gruError)
+	scatterPlot("Time", "GRU", "gru.png", nil, gruError)
+	scatterPlot("GRU", "LSTM", "lstm_vs_gru.png", gruError, lstmError)
+	gruError.Print()
 
 	test := func(factory anomaly.NetworkFactory) int {
 		count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1

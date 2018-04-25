@@ -9,7 +9,7 @@
 * lstm - LSTM implementation
 
 ## Abstract
-Standard statistical methods can be used for anomaly detection of one dimensional real valued data. The multidimensional nature of JSON documents makes anomaly detection more difficult. Firstly, this README proposes a two stage algorithm for the anomaly detection of JSON documents. The first stage of the algorithm uses [random matrix dimensionality reduction](https://en.wikipedia.org/wiki/Random_projection) to vectorize a JSON document into a fixed length vector (JSON document vector). The second stage of the algorithm uses one of three methods: average [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity), a single neuron, or an [autoencoder](https://en.wikipedia.org/wiki/Autoencoder) to determine how surprising the JSON document vector is. Secondly, this README proposes using a [LSTM](https://en.wikipedia.org/wiki/Long_short-term_memory) [recurrent neural network](https://en.wikipedia.org/wiki/Recurrent_neural_network) for anomaly detection. Simple statistical analysis can then be used for determining which JSON documents the user should be alerted to.
+Standard statistical methods can be used for anomaly detection of one dimensional real valued data. The multidimensional nature of JSON documents makes anomaly detection more difficult. Firstly, this README proposes a two stage algorithm for the anomaly detection of JSON documents. The first stage of the algorithm uses [random matrix dimensionality reduction](https://en.wikipedia.org/wiki/Random_projection) to vectorize a JSON document into a fixed length vector (JSON document vector). The second stage of the algorithm uses one of three methods: average [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity), a single neuron, or an [autoencoder](https://en.wikipedia.org/wiki/Autoencoder) to determine how surprising the JSON document vector is. Secondly, this README proposes using a [LSTM](https://en.wikipedia.org/wiki/Long_short-term_memory) or a [GRU](https://en.wikipedia.org/wiki/Gated_recurrent_unit) [recurrent neural network](https://en.wikipedia.org/wiki/Recurrent_neural_network) for anomaly detection. Simple statistical analysis can then be used for determining which JSON documents the user should be alerted to.
 
 ## Background
 * [Random projection](https://en.wikipedia.org/wiki/Random_projection)
@@ -70,10 +70,16 @@ An autoencoding neural network isn't trained with labeled data, instead it is tr
 
 The code for the autoencoder algorithm can be found [here](https://github.com/pointlander/anomaly/blob/master/autoencoder.go).
 
-## LSTM algorithm
+## Recurrent neural networks
+### LSTM algorithm
 The LSTM takes a series of bytes as input and outputs a predicted next byte. The LSTM algorithm works by training a LSTM on JSON data. The cost of training is then used as a surprise metric of the JSON data. Unlike the above algorithms, the LSTM based solution is capable of anomaly detection for non-JSON binary protocols. The LSTM has a state which could be used as a JSON document vector as in the above algorithm.
 
 The code for the LSTM algorithm can be found [here](https://github.com/pointlander/anomaly/blob/master/lstm/lstm.go).
+
+### GRU algorithm
+A GRU is similar to a LSTM, but it requires fewer tensor operations. The cost of training is still used as a surprise metric.
+
+The code for the GRU algorithm can be found [here](https://github.com/pointlander/anomaly/blob/master/gru/gru.go).
 
 ## Benchmarks
 The benchmarks are executed with:
@@ -82,16 +88,17 @@ go test -bench=.
 ```
 
 ```
-BenchmarkLFSR-4                    	1000000000	         1.99 ns/op
+BenchmarkLFSR-4                    	1000000000	         2.00 ns/op
 BenchmarkSource-4                  	500000000	         3.77 ns/op
-BenchmarkVectorizer-4              	    2000	    537426 ns/op
-BenchmarkVectorizerLFSR-4          	   10000	    103953 ns/op
-BenchmarkVectorizerNoCache-4       	    2000	   1075383 ns/op
-BenchmarkVectorizerLFSRNoCache-4   	   10000	    200837 ns/op
-BenchmarkAverageSimilarity-4       	   10000	   1260944 ns/op
-BenchmarkNeuron-4                  	    5000	    222802 ns/op
-BenchmarkAutoencoder-4             	     200	   7721645 ns/op
-BenchmarkLSTM-4                    	      20	 113401111 ns/op
+BenchmarkVectorizer-4              	    2000	    550183 ns/op
+BenchmarkVectorizerLFSR-4          	   10000	    104569 ns/op
+BenchmarkVectorizerNoCache-4       	    2000	   1089937 ns/op
+BenchmarkVectorizerLFSRNoCache-4   	   10000	    202756 ns/op
+BenchmarkAverageSimilarity-4       	   10000	   1330759 ns/op
+BenchmarkNeuron-4                  	    5000	    220460 ns/op
+BenchmarkAutoencoder-4             	     200	   8051664 ns/op
+BenchmarkLSTM-4                    	      10	 105522106 ns/op
+BenchmarkGRU-4                     	      20	  76494989 ns/op
 ```
 As can been seen the LSTM based algorithm is much slower than the two stage algorithm. The single neuron based approach is the fastest solution.
 
@@ -155,7 +162,8 @@ The below three graphs show average cosine similarity, single neuron, and autoen
 
 ![Graph 7 autoencoder error vs time](graph_7_autoencoder_error.png?raw=true)
 
-### LSTM algorithm
+### Recurrent neural networks
+#### LSTM algorithm
 The distribution of the LSTM surprise metrics for random JSON documents is very narrow:
 
 ![Graph 9 LSTM distribution](graph_9_lstm_distribution.png?raw=true)
@@ -170,12 +178,25 @@ The LSTM algorithm doesn't correlate with the average similarity approach, so it
 
 The LSTM does correctly determine the surprise metrics of the above two test JSON documents. The surprise metric of the first test JSON document is greater than the surprise metric of the second test JSON document.
 
+#### GRU algorithm
+The distribution of the GRU surprise metrics is similar to the LSTM distribution:
+
+![Graph 12 GRU distribution](graph_12_gru_distribution.png?raw=true)
+
+The GRU learning the random JSON documents can be seen in the below graph:
+
+![Graph 10 GRU vs time](graph_13_gru.png?raw=true)
+
+The LSTM and GRU algorithms are correlated. This means that they are probably not computing a random process:
+
+![Graph 11 LSTM vs GRU](graph_14_lstm_vs_gru.png?raw=true)
+
 ## Conclusion
-An anomaly detection engine has been demonstrated. The first two stage algorithm is made up of two components: a vectorizer and an algorithm for computing surprise. After vectorization the single neuron and autoencoder algorithms have a fixed cost for determining if a JSON document is an anomaly. The single neuron and autoencoder methods are suitable for taking a real time learning approach. The single neuron method is faster than the other two methods. The LSTM based algorithm works, but it is slower than the other approaches.
+An anomaly detection engine has been demonstrated. The first two stage algorithm is made up of two components: a vectorizer and an algorithm for computing surprise. After vectorization the single neuron and autoencoder algorithms have a fixed cost for determining if a JSON document is an anomaly. The single neuron and autoencoder methods are suitable for taking a real time learning approach. The single neuron method is faster than the other two methods. The LSTM based algorithm works, but it is slower than the other approaches. A GRU based algorithm can be used instead of a LSTM based algorithm for faster performance.
 
 ## Future work
 - [ ] The LSTM algorithm could be used to replace the vectorizer of the two stage algorithm. In theory this should result in more optimal vectorization.
-- [ ] Instead of a LSTM based recurrent neural network, a [GRU](https://en.wikipedia.org/wiki/Gated_recurrent_unit) based recurrent neural network could be used. The GRU would be faster than the LSTM.
+- [x] Instead of a LSTM based recurrent neural network, a [GRU](https://en.wikipedia.org/wiki/Gated_recurrent_unit) based recurrent neural network could be used. The GRU would be faster than the LSTM.
 - [ ] Use a recurrent neural network to create a heat map of the JSON document. This would show the parts that are anomalies.
 - [ ] [Ensemble learning](https://en.wikipedia.org/wiki/Ensemble_learning) could be used to combine multiple algorithms.
 - [ ] Use [models for adaptive arithmetic coding](https://fgiesen.wordpress.com/2015/05/26/models-for-adaptive-arithmetic-coding/) for anomaly detection.
