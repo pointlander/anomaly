@@ -7,6 +7,7 @@
 * cmd/search_lfsr - Code for finding maximal length lfsr
 * images - Test images for anomaly_image
 * lstm - LSTM implementation
+* gru - GRU implementation
 
 ## Abstract
 Standard statistical methods can be used for anomaly detection of one dimensional real valued data. The multidimensional nature of JSON documents makes anomaly detection more difficult. Firstly, this README proposes a two stage algorithm for the anomaly detection of JSON documents. The first stage of the algorithm uses [random matrix dimensionality reduction](https://en.wikipedia.org/wiki/Random_projection) to vectorize a JSON document into a fixed length vector (JSON document vector). The second stage of the algorithm uses one of three methods: average [cosine similarity](https://en.wikipedia.org/wiki/Cosine_similarity), a single neuron, or an [autoencoder](https://en.wikipedia.org/wiki/Autoencoder) to determine how surprising the JSON document vector is. Secondly, this README proposes using a [LSTM](https://en.wikipedia.org/wiki/Long_short-term_memory) or a [GRU](https://en.wikipedia.org/wiki/Gated_recurrent_unit) [recurrent neural network](https://en.wikipedia.org/wiki/Recurrent_neural_network) for anomaly detection. Simple statistical analysis can then be used for determining which JSON documents the user should be alerted to.
