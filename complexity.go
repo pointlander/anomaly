@@ -16,7 +16,7 @@ const (
 	// CDF16Size is the size of the cdf
 	CDF16Size = 256
 	// CDF16Depth is the depth of the context tree
-	CDF16Depth = 2
+	CDF16Depth = 1
 )
 
 // Node16 is a context node
