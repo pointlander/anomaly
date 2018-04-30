@@ -6,6 +6,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"math"
 	"math/rand"
@@ -63,6 +64,7 @@ func dtanh32(x float32) float32 {
 // TestResult is a test result
 type TestResult struct {
 	Surprise float64
+	Raw      float64
 }
 
 // TestResults are the test results from Anomaly
@@ -155,6 +157,7 @@ func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory) *TestResults
 			panic(err)
 		}
 		e := float64(network.Train([]byte(input)))
+		results[i].Raw = e
 		results[i].Surprise = math.Abs((e - average) / stddev)
 	}
 
@@ -175,10 +178,15 @@ func (t *TestResults) IsCorrect() bool {
 // Print prints test results
 func (t *TestResults) Print() {
 	results := t.Results
+	fmt.Printf("%v %v %v\n", t.Seed, results[0].Raw, results[1].Raw)
 	fmt.Printf("%v %v %v\n", t.Seed, results[0].Surprise, results[1].Surprise)
 }
 
+var full = flag.Bool("full", false, "run full bench")
+
 func main() {
+	flag.Parse()
+
 	graph := 1
 
 	histogram := func(title, name string, values *TestResults) {
@@ -314,6 +322,15 @@ func main() {
 	scatterPlot("Time", "GRU", "gru.png", nil, gruError)
 	scatterPlot("GRU", "LSTM", "lstm_vs_gru.png", gruError, lstmError)
 	gruError.Print()
+
+	complexityError := AnomalyRecurrent(1, anomaly.NewComplexity)
+	histogram("Complexity Distribution", "complexity_distribution.png", complexityError)
+	scatterPlot("Time", "Complexity", "complexity.png", nil, complexityError)
+	complexityError.Print()
+
+	if !*full {
+		return
+	}
 
 	test := func(factory anomaly.NetworkFactory) int {
 		count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1
