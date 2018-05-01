@@ -77,6 +77,15 @@ func (c *CDF16) ResetContext() {
 	}
 }
 
+// AddContext adds a symbol to the context
+func (c *CDF16) AddContext(s uint16) {
+	context, first := c.Context, c.First
+	length := len(context)
+	if length > 0 {
+		context[first], c.First = s, (first+1)%length
+	}
+}
+
 // Model gets the model for the current context
 func (c *CDF16) Model() []uint16 {
 	context := c.Context
@@ -151,6 +160,10 @@ func (c *Complexity) Train(input []byte) float32 {
 	for _, s := range input {
 		model := c.Model()
 		total += uint64(bits.Len16(model[s]))
+		c.AddContext(uint16(s))
+	}
+	c.ResetContext()
+	for _, s := range input {
 		c.Update(uint16(s))
 	}
 	c.ResetContext()
