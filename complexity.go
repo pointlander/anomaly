@@ -16,7 +16,7 @@ const (
 	// CDF16Size is the size of the cdf
 	CDF16Size = 256
 	// CDF16Depth is the depth of the context tree
-	CDF16Depth = 1
+	CDF16Depth = 2
 )
 
 // Node16 is a context node
@@ -159,7 +159,7 @@ func (c *Complexity) Train(input []byte) float32 {
 	var total uint64
 	for _, s := range input {
 		model := c.Model()
-		total += uint64(bits.Len16(model[s]))
+		total += uint64(bits.Len16(model[s+1] - model[s]))
 		c.AddContext(uint16(s))
 	}
 	c.ResetContext()
