@@ -154,3 +154,19 @@ func BenchmarkGRU(b *testing.B) {
 		network.Train(data)
 	}
 }
+
+func BenchmarkComplexity(b *testing.B) {
+	rnd := rand.New(rand.NewSource(1))
+	network := NewComplexity()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		object := GenerateRandomJSON(rnd)
+		data, err := json.Marshal(object)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.StartTimer()
+		network.Train(data)
+	}
+}

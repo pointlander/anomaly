@@ -405,13 +405,22 @@ func (r *CharRNN) ModeLearn(steps int) (err error) {
 // ModeInference puts the CharRNN into inference mode
 func (r *CharRNN) ModeInference() (err error) {
 	inputs := make([]*tensor.Dense, 1)
+	outputs := make([]*tensor.Dense, 1)
+
 	previous := make([]*lstmOut, 1)
 	inputs[0], previous[0], err = r.fwd(nil)
 	if err != nil {
 		return
 	}
+	logprob := G.Must(G.Neg(G.Must(G.Log(previous[0].probs))))
+	outputs[0] = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(r.outputSize))
+	output := G.NewVector(r.g, tensor.Float32, G.WithShape(r.outputSize), G.WithValue(outputs[0]))
+	cost := G.Must(G.Mul(logprob, output))
+
 	r.inputs = inputs
+	r.outputs = outputs
 	r.previous = previous
+	r.cost = cost
 	r.machine = G.NewTapeMachine(r.g)
 	return
 }
@@ -494,6 +503,28 @@ func (r *CharRNN) Predict() {
 	}
 
 	fmt.Printf("Sampled: %q; \nArgMax: %q\n", string(sentence), string(sentence2))
+}
+
+// Cost computes the cost of the input
+func (r *CharRNN) Cost(input []byte) float32 {
+	var cost float32
+	r.reset()
+	for i := range input[:len(input)-1] {
+		r.inputs[0].Zero()
+		r.inputs[0].SetF32(int(input[i]), 1.0)
+		r.outputs[0].Zero()
+		r.outputs[0].SetF32(int(input[i+1]), 1.0)
+		err := r.machine.RunAll()
+		if err != nil {
+			panic(err)
+		}
+		if cv, ok := r.cost.Value().(G.Scalar); ok {
+			cost += cv.Data().(float32)
+		}
+		r.feedback(0)
+		r.machine.Reset()
+	}
+	return cost
 }
 
 // Learn learns strings

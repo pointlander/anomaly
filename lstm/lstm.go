@@ -9,8 +9,8 @@ import (
 // LSTM is a LSTM based anomaly detection engine
 type LSTM struct {
 	*Model
-	learner *CharRNN
-	solver  *G.RMSPropSolver
+	learner, inference *CharRNN
+	solver             *G.RMSPropSolver
 }
 
 // NewLSTM creates a new LSTM anomaly detection engine
@@ -30,6 +30,11 @@ func NewLSTM() *LSTM {
 	if err != nil {
 		panic(err)
 	}
+	inference := NewCharRNN(lstm, vocabulary)
+	err = inference.ModeInference()
+	if err != nil {
+		panic(err)
+	}
 
 	learnrate := 0.01
 	l2reg := 0.000001
@@ -37,25 +42,25 @@ func NewLSTM() *LSTM {
 	solver := G.NewRMSPropSolver(G.WithLearnRate(learnrate), G.WithL2Reg(l2reg), G.WithClip(clipVal))
 
 	return &LSTM{
-		Model:   lstm,
-		learner: learner,
-		solver:  solver,
+		Model:     lstm,
+		learner:   learner,
+		inference: inference,
+		solver:    solver,
 	}
 }
 
 // Train trains the LSTM
 func (l *LSTM) Train(input []byte) float32 {
+	cost := l.inference.Cost(input)
+
 	data := make([]rune, len(input))
 	for i, v := range input {
 		data[i] = rune(v)
 	}
-	cost, _, err := l.learner.Learn(data, 0, l.solver)
+	_, _, err := l.learner.Learn(data, 0, l.solver)
 	if err != nil {
 		panic(fmt.Sprintf("%+v", err))
 	}
-	average := 0.0
-	for _, v := range cost {
-		average += v
-	}
-	return float32(average / float64(len(cost)))
+
+	return float32(cost) / float32(len(input))
 }
