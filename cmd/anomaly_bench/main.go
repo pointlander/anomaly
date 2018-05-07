@@ -69,6 +69,7 @@ type TestResult struct {
 
 // TestResults are the test results from Anomaly
 type TestResults struct {
+	Name            string
 	Seed            int
 	Surprise        plotter.Values
 	Average, STDDEV float64
@@ -88,7 +89,7 @@ func statistics(values plotter.Values) (average, stddev float64) {
 }
 
 // Anomaly tests the anomaly detection algorithm
-func Anomaly(seed int, factory anomaly.NetworkFactory) *TestResults {
+func Anomaly(seed int, factory anomaly.NetworkFactory, name string) *TestResults {
 	rndGenerator := rand.New(rand.NewSource(int64(seed)))
 	rndNetwork := rand.New(rand.NewSource(int64(seed)))
 	vectorizer := anomaly.NewVectorizer(VectorSize, true, anomaly.NewLFSR32Source)
@@ -115,10 +116,12 @@ func Anomaly(seed int, factory anomaly.NetworkFactory) *TestResults {
 		vector := vectorizer.Vectorize(object)
 		unit := anomaly.Normalize(vector)
 		e := float64(network.Train(unit))
+		results[i].Raw = e
 		results[i].Surprise = math.Abs((e - average) / stddev)
 	}
 
 	return &TestResults{
+		Name:     name,
 		Seed:     seed,
 		Surprise: surprise,
 		Average:  average,
@@ -128,7 +131,7 @@ func Anomaly(seed int, factory anomaly.NetworkFactory) *TestResults {
 }
 
 // AnomalyRecurrent tests the LSTM anomaly detection algorithm
-func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory) *TestResults {
+func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory, name string) *TestResults {
 	rndGenerator := rand.New(rand.NewSource(int64(seed)))
 	network := factory()
 
@@ -162,6 +165,7 @@ func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory) *TestResults
 	}
 
 	return &TestResults{
+		Name:     name,
 		Seed:     seed,
 		Surprise: surprise,
 		Average:  average,
@@ -178,8 +182,9 @@ func (t *TestResults) IsCorrect() bool {
 // Print prints test results
 func (t *TestResults) Print() {
 	results := t.Results
-	fmt.Printf("%v %v %v\n", t.Seed, results[0].Raw, results[1].Raw)
-	fmt.Printf("%v %v %v\n", t.Seed, results[0].Surprise, results[1].Surprise)
+	fmt.Printf("%v %v %.6f (%.6f) %.6f (%.6f)\n", t.Seed, t.Name,
+		results[0].Surprise, results[0].Raw,
+		results[1].Surprise, results[1].Raw)
 }
 
 var full = flag.Bool("full", false, "run full bench")
@@ -290,26 +295,26 @@ func main() {
 		}
 	}
 
-	averageSimilarity := Anomaly(1, anomaly.NewAverageSimilarity)
+	averageSimilarity := Anomaly(1, anomaly.NewAverageSimilarity, "average similarity")
 	histogram("Average Similarity Distribution", "average_similarity_distribution.png", averageSimilarity)
 	scatterPlot("Time", "Average Similarity", "average_similarity.png", nil, averageSimilarity)
 	averageSimilarity.Print()
 
-	neuron := Anomaly(1, anomaly.NewNeuron)
+	neuron := Anomaly(1, anomaly.NewNeuron, "neuron")
 	histogram("Neuron Distribution", "neuron_distribution.png", neuron)
 	scatterPlot("Time", "Neuron", "neuron.png", nil, neuron)
 	scatterPlot("Average Similarity", "Neuron", "neuron_vs_average_similarity.png",
 		averageSimilarity, neuron)
 	neuron.Print()
 
-	autoencoderError := Anomaly(1, anomaly.NewAutoencoder)
+	autoencoderError := Anomaly(1, anomaly.NewAutoencoder, "autoencoder")
 	histogram("Autoencoder Error Distribution", "autoencoder_error_distribution.png", autoencoderError)
 	scatterPlot("Time", "Autoencoder Error", "autoencoder_error.png", nil, autoencoderError)
 	scatterPlot("Average Similarity", "Autoencoder Error", "autoencoder_error_vs_average_similarity.png",
 		averageSimilarity, autoencoderError)
 	autoencoderError.Print()
 
-	lstmError := AnomalyRecurrent(1, anomaly.NewLSTM)
+	lstmError := AnomalyRecurrent(1, anomaly.NewLSTM, "lstm")
 	set := cutset(lstmError)
 	histogram("LSTM Distribution", "lstm_distribution.png", cut(lstmError, set))
 	scatterPlot("Time", "LSTM", "lstm.png", nil, cut(lstmError, set))
@@ -317,13 +322,13 @@ func main() {
 		cut(averageSimilarity, set), cut(lstmError, set))
 	lstmError.Print()
 
-	gruError := AnomalyRecurrent(1, anomaly.NewGRU)
+	gruError := AnomalyRecurrent(1, anomaly.NewGRU, "gru")
 	histogram("GRU Distribution", "gru_distribution.png", gruError)
 	scatterPlot("Time", "GRU", "gru.png", nil, gruError)
 	scatterPlot("GRU", "LSTM", "lstm_vs_gru.png", gruError, lstmError)
 	gruError.Print()
 
-	complexityError := AnomalyRecurrent(1, anomaly.NewComplexity)
+	complexityError := AnomalyRecurrent(1, anomaly.NewComplexity, "complexity")
 	histogram("Complexity Distribution", "complexity_distribution.png", complexityError)
 	scatterPlot("Time", "Complexity", "complexity.png", nil, complexityError)
 	complexityError.Print()
@@ -332,7 +337,7 @@ func main() {
 		return
 	}
 
-	test := func(factory anomaly.NetworkFactory) int {
+	test := func(factory anomaly.NetworkFactory, name string) int {
 		count, total, results, j := 0, 0, make(chan *TestResults, Parallelization), 1
 		process := func() {
 			result := <-results
@@ -344,14 +349,14 @@ func main() {
 		}
 		for i := 0; i < Parallelization; i++ {
 			go func(j int) {
-				results <- Anomaly(j, factory)
+				results <- Anomaly(j, factory, name)
 			}(j)
 			j++
 		}
 		for j <= Trials {
 			process()
 			go func(j int) {
-				results <- Anomaly(j, factory)
+				results <- Anomaly(j, factory, name)
 			}(j)
 			j++
 		}
@@ -360,9 +365,9 @@ func main() {
 		}
 		return count
 	}
-	averageSimilarityCount := test(anomaly.NewAverageSimilarity)
-	neuronCount := test(anomaly.NewNeuron)
-	autoencoderCount := test(anomaly.NewAutoencoder)
+	averageSimilarityCount := test(anomaly.NewAverageSimilarity, "average similarity")
+	neuronCount := test(anomaly.NewNeuron, "neuron")
+	autoencoderCount := test(anomaly.NewAutoencoder, "autoencoder")
 	fmt.Printf("average similarity: %v / %v\n", averageSimilarityCount, Trials)
 	fmt.Printf("neuron: %v / %v\n", neuronCount, Trials)
 	fmt.Printf("autoencoder: %v / %v\n", autoencoderCount, Trials)
