@@ -63,8 +63,9 @@ func dtanh32(x float32) float32 {
 
 // TestResult is a test result
 type TestResult struct {
-	Surprise float64
-	Raw      float64
+	Surprise    float64
+	Uncertainty float64
+	Raw         float64
 }
 
 // TestResults are the test results from Anomaly
@@ -174,6 +175,52 @@ func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory, name string)
 	}
 }
 
+// AnomalyMeta tests the Meta anomaly detection algorithm
+func AnomalyMeta(seed int, factory func() *anomaly.Meta, name string) *TestResults {
+	rndGenerator := rand.New(rand.NewSource(int64(seed)))
+	network := factory()
+
+	surprise, uncertainty := make(plotter.Values, Samples), make(plotter.Values, Samples)
+	for i := 0; i < Samples; i++ {
+		object := anomaly.GenerateRandomJSON(rndGenerator)
+		input, err := json.Marshal(object)
+		if err != nil {
+			panic(err)
+		}
+		s, u := network.Train(input)
+		surprise[i], uncertainty[i] = float64(s), float64(u)
+	}
+	surprise = surprise[Cutoff:]
+
+	average, stddev := statistics(surprise)
+
+	results := make([]TestResult, len(Tests))
+	for i, test := range Tests {
+		var object map[string]interface{}
+		err := json.Unmarshal([]byte(test), &object)
+		if err != nil {
+			panic(err)
+		}
+		input, err := json.Marshal(object)
+		if err != nil {
+			panic(err)
+		}
+		s, u := network.Train([]byte(input))
+		results[i].Raw = float64(s)
+		results[i].Surprise = math.Abs((float64(s) - average) / stddev)
+		results[i].Uncertainty = float64(u)
+	}
+
+	return &TestResults{
+		Name:     name,
+		Seed:     seed,
+		Surprise: surprise,
+		Average:  average,
+		STDDEV:   stddev,
+		Results:  results,
+	}
+}
+
 // IsCorrect determines if a result is IsCorrect
 func (t *TestResults) IsCorrect() bool {
 	return t.Results[0].Surprise > t.Results[1].Surprise
@@ -182,9 +229,16 @@ func (t *TestResults) IsCorrect() bool {
 // Print prints test results
 func (t *TestResults) Print() {
 	results := t.Results
+	if results[0].Uncertainty != 0 && results[1].Uncertainty != 0 {
+		fmt.Printf("%v %v %.6f (%.6f+-%.6f) %.6f (%.6f+-%.6f)\n", t.Seed, t.Name,
+			results[0].Surprise, results[0].Raw, results[0].Uncertainty,
+			results[1].Surprise, results[1].Raw, results[1].Uncertainty)
+		return
+	}
 	fmt.Printf("%v %v %.6f (%.6f) %.6f (%.6f)\n", t.Seed, t.Name,
 		results[0].Surprise, results[0].Raw,
 		results[1].Surprise, results[1].Raw)
+
 }
 
 var full = flag.Bool("full", false, "run full bench")
@@ -332,6 +386,9 @@ func main() {
 	histogram("Complexity Distribution", "complexity_distribution.png", complexityError)
 	scatterPlot("Time", "Complexity", "complexity.png", nil, complexityError)
 	complexityError.Print()
+
+	metaError := AnomalyMeta(1, anomaly.NewMeta, "meta")
+	metaError.Print()
 
 	if !*full {
 		return
