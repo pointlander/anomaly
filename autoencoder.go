@@ -6,6 +6,7 @@ package anomaly
 
 // Autoencoder is a autoencoding neural network
 import (
+	"encoding/json"
 	"math"
 	"math/rand"
 
@@ -15,10 +16,12 @@ import (
 // Autoencoder is an autoencoding neural network
 type Autoencoder struct {
 	*neural.Neural32
+	*Vectorizer
 }
 
 // NewAutoencoder creates an autoencoder
-func NewAutoencoder(width int, rnd *rand.Rand) Network {
+func NewAutoencoder(rnd *rand.Rand, vectorizer *Vectorizer) Network {
+	width := vectorizer.Size
 	config := func(n *neural.Neural32) {
 		random32 := func(a, b float32) float32 {
 			return (b-a)*rnd.Float32() + a
@@ -30,18 +33,27 @@ func NewAutoencoder(width int, rnd *rand.Rand) Network {
 	}
 	nn := neural.NewNeural32(config)
 	return &Autoencoder{
-		Neural32: nn,
+		Neural32:   nn,
+		Vectorizer: vectorizer,
 	}
 }
 
 // Train calculates the surprise with the autoencoder
-func (a *Autoencoder) Train(input []float32) float32 {
-	input = Adapt(input)
+func (a *Autoencoder) Train(input []byte) (surprise, uncertainty float32) {
+	var object map[string]interface{}
+	err := json.Unmarshal(input, &object)
+	if err != nil {
+		panic(err)
+	}
+	vector := a.Vectorizer.Vectorize(object)
+	unit := Normalize(vector)
+
+	unit = Adapt(unit)
 	source := func(iterations int) [][][]float32 {
 		data := make([][][]float32, 1)
-		data[0] = [][]float32{input, input}
+		data[0] = [][]float32{unit, unit}
 		return data
 	}
 	e := a.Neural32.Train(source, 1, 0.6, 0.4)
-	return e[0]
+	return e[0], 0
 }

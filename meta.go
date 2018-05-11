@@ -17,7 +17,7 @@ type Meta struct {
 }
 
 // NewMeta creates a new meta engine
-func NewMeta() *Meta {
+func NewMeta(rnd *rand.Rand, vectorizer *Vectorizer) Network {
 	models := make([]*CDF16, 8)
 	for i := range models {
 		models[i] = NewCDF16()

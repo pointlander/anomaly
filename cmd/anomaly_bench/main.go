@@ -89,96 +89,12 @@ func statistics(values plotter.Values) (average, stddev float64) {
 	return
 }
 
-// Anomaly tests the anomaly detection algorithm
+// Anomaly tests the anomaly detection algorithms
 func Anomaly(seed int, factory anomaly.NetworkFactory, name string) *TestResults {
 	rndGenerator := rand.New(rand.NewSource(int64(seed)))
 	rndNetwork := rand.New(rand.NewSource(int64(seed)))
 	vectorizer := anomaly.NewVectorizer(VectorSize, true, anomaly.NewLFSR32Source)
-	network := factory(VectorSize, rndNetwork)
-
-	surprise := make(plotter.Values, Samples)
-	for i := 0; i < Samples; i++ {
-		object := anomaly.GenerateRandomJSON(rndGenerator)
-		vector := vectorizer.Vectorize(object)
-		unit := anomaly.Normalize(vector)
-		surprise[i] = float64(network.Train(unit))
-	}
-	surprise = surprise[Cutoff:]
-
-	average, stddev := statistics(surprise)
-
-	results := make([]TestResult, len(Tests))
-	for i, test := range Tests {
-		var object map[string]interface{}
-		err := json.Unmarshal([]byte(test), &object)
-		if err != nil {
-			panic(err)
-		}
-		vector := vectorizer.Vectorize(object)
-		unit := anomaly.Normalize(vector)
-		e := float64(network.Train(unit))
-		results[i].Raw = e
-		results[i].Surprise = math.Abs((e - average) / stddev)
-	}
-
-	return &TestResults{
-		Name:     name,
-		Seed:     seed,
-		Surprise: surprise,
-		Average:  average,
-		STDDEV:   stddev,
-		Results:  results,
-	}
-}
-
-// AnomalyRecurrent tests the LSTM anomaly detection algorithm
-func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory, name string) *TestResults {
-	rndGenerator := rand.New(rand.NewSource(int64(seed)))
-	network := factory()
-
-	surprise := make(plotter.Values, Samples)
-	for i := 0; i < Samples; i++ {
-		object := anomaly.GenerateRandomJSON(rndGenerator)
-		input, err := json.Marshal(object)
-		if err != nil {
-			panic(err)
-		}
-		surprise[i] = float64(network.Train(input))
-	}
-	surprise = surprise[Cutoff:]
-
-	average, stddev := statistics(surprise)
-
-	results := make([]TestResult, len(Tests))
-	for i, test := range Tests {
-		var object map[string]interface{}
-		err := json.Unmarshal([]byte(test), &object)
-		if err != nil {
-			panic(err)
-		}
-		input, err := json.Marshal(object)
-		if err != nil {
-			panic(err)
-		}
-		e := float64(network.Train([]byte(input)))
-		results[i].Raw = e
-		results[i].Surprise = math.Abs((e - average) / stddev)
-	}
-
-	return &TestResults{
-		Name:     name,
-		Seed:     seed,
-		Surprise: surprise,
-		Average:  average,
-		STDDEV:   stddev,
-		Results:  results,
-	}
-}
-
-// AnomalyMeta tests the Meta anomaly detection algorithm
-func AnomalyMeta(seed int, factory func() *anomaly.Meta, name string) *TestResults {
-	rndGenerator := rand.New(rand.NewSource(int64(seed)))
-	network := factory()
+	network := factory(rndNetwork, vectorizer)
 
 	surprise, uncertainty := make(plotter.Values, Samples), make(plotter.Values, Samples)
 	for i := 0; i < Samples; i++ {
@@ -368,7 +284,7 @@ func main() {
 		averageSimilarity, autoencoderError)
 	autoencoderError.Print()
 
-	lstmError := AnomalyRecurrent(1, anomaly.NewLSTM, "lstm")
+	lstmError := Anomaly(1, anomaly.NewLSTM, "lstm")
 	set := cutset(lstmError)
 	histogram("LSTM Distribution", "lstm_distribution.png", cut(lstmError, set))
 	scatterPlot("Time", "LSTM", "lstm.png", nil, cut(lstmError, set))
@@ -376,18 +292,18 @@ func main() {
 		cut(averageSimilarity, set), cut(lstmError, set))
 	lstmError.Print()
 
-	gruError := AnomalyRecurrent(1, anomaly.NewGRU, "gru")
+	gruError := Anomaly(1, anomaly.NewGRU, "gru")
 	histogram("GRU Distribution", "gru_distribution.png", gruError)
 	scatterPlot("Time", "GRU", "gru.png", nil, gruError)
 	scatterPlot("GRU", "LSTM", "lstm_vs_gru.png", gruError, lstmError)
 	gruError.Print()
 
-	complexityError := AnomalyRecurrent(1, anomaly.NewComplexity, "complexity")
+	complexityError := Anomaly(1, anomaly.NewComplexity, "complexity")
 	histogram("Complexity Distribution", "complexity_distribution.png", complexityError)
 	scatterPlot("Time", "Complexity", "complexity.png", nil, complexityError)
 	complexityError.Print()
 
-	metaError := AnomalyMeta(1, anomaly.NewMeta, "meta")
+	metaError := Anomaly(1, anomaly.NewMeta, "meta")
 	metaError.Print()
 
 	if !*full {

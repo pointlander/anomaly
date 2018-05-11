@@ -50,7 +50,7 @@ func NewLSTM() *LSTM {
 }
 
 // Train trains the LSTM
-func (l *LSTM) Train(input []byte) float32 {
+func (l *LSTM) Train(input []byte) (surprise, uncertainty float32) {
 	cost := l.inference.Cost(input)
 
 	data := make([]rune, len(input))
@@ -62,5 +62,5 @@ func (l *LSTM) Train(input []byte) float32 {
 		panic(fmt.Sprintf("%+v", err))
 	}
 
-	return float32(cost) / float32(len(input))
+	return float32(cost) / float32(len(input)), 0
 }
