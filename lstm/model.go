@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"math/rand"
 	"strconv"
 
 	G "gorgonia.org/gorgonia"
@@ -134,12 +135,21 @@ type lstmOut struct {
 }
 
 // NewLSTMModel creates a new LSTM model
-func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int, stddev float64) *Model {
+func NewLSTMModel(rnd *rand.Rand, inputSize, embeddingSize, outputSize int, hiddenSizes []int) *Model {
 	m := new(Model)
 	m.inputSize = inputSize
 	m.embeddingSize = embeddingSize
 	m.outputSize = outputSize
 	m.hiddenSizes = hiddenSizes
+
+	gaussian32 := func(s ...int) []float32 {
+		size := tensor.Shape(s).TotalSize()
+		weights, stdev := make([]float32, size), math.Sqrt(2/float64(s[len(s)-1]))
+		for i := range weights {
+			weights[i] = float32(rnd.NormFloat64() * stdev)
+		}
+		return weights
+	}
 
 	for depth := 0; depth < len(hiddenSizes); depth++ {
 		prevSize := embeddingSize
@@ -152,35 +162,35 @@ func NewLSTMModel(inputSize, embeddingSize, outputSize int, hiddenSizes []int, s
 
 		// input gate weights
 
-		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.wix = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(gaussian32(hiddenSize, prevSize)))
+		l.wih = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(gaussian32(hiddenSize, hiddenSize)))
 		l.biasI = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// output gate weights
 
-		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.wox = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(gaussian32(hiddenSize, prevSize)))
+		l.woh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(gaussian32(hiddenSize, hiddenSize)))
 		l.biasO = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// forget gate weights
 
-		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.wfx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(gaussian32(hiddenSize, prevSize)))
+		l.wfh = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(gaussian32(hiddenSize, hiddenSize)))
 		l.biasF = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 
 		// cell write
 
-		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, prevSize)))
-		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, hiddenSize, hiddenSize)))
+		l.wcx = tensor.New(tensor.WithShape(hiddenSize, prevSize), tensor.WithBacking(gaussian32(hiddenSize, prevSize)))
+		l.wch = tensor.New(tensor.WithShape(hiddenSize, hiddenSize), tensor.WithBacking(gaussian32(hiddenSize, hiddenSize)))
 		l.biasC = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(hiddenSize))
 	}
 
 	lastHiddenSize := hiddenSizes[len(hiddenSizes)-1]
 
-	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, outputSize, lastHiddenSize)))
+	m.whd = tensor.New(tensor.WithShape(outputSize, lastHiddenSize), tensor.WithBacking(gaussian32(outputSize, lastHiddenSize)))
 	m.biasD = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
 
-	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(G.Gaussian32(0.0, stddev, embeddingSize, inputSize)))
+	m.embedding = tensor.New(tensor.WithShape(embeddingSize, inputSize), tensor.WithBacking(gaussian32(embeddingSize, inputSize)))
 	return m
 }
 

@@ -131,7 +131,7 @@ func BenchmarkAutoencoder(b *testing.B) {
 
 func BenchmarkLSTM(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	network := lstm.NewLSTM()
+	network := lstm.NewLSTM(rnd)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
@@ -147,7 +147,7 @@ func BenchmarkLSTM(b *testing.B) {
 
 func BenchmarkGRU(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	network := gru.NewGRU()
+	network := gru.NewGRU(rnd)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()

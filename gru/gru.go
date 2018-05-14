@@ -2,6 +2,7 @@ package gru
 
 import (
 	"fmt"
+	"math/rand"
 
 	G "gorgonia.org/gorgonia"
 )
@@ -14,7 +15,7 @@ type GRU struct {
 }
 
 // NewGRU creates a new GRU anomaly detection engine
-func NewGRU() *GRU {
+func NewGRU(rnd *rand.Rand) *GRU {
 	steps := 4
 	vocabulary := NewVocabularyFromRange(0, 256)
 
@@ -22,8 +23,7 @@ func NewGRU() *GRU {
 	embeddingSize := 10
 	outputSize := len(vocabulary.List)
 	hiddenSizes := []int{10}
-	stddev := 0.08
-	gru := NewModel(inputSize, embeddingSize, outputSize, hiddenSizes, stddev)
+	gru := NewModel(rnd, inputSize, embeddingSize, outputSize, hiddenSizes)
 
 	learner := NewCharRNN(gru, vocabulary)
 	err := learner.ModeLearn(steps)

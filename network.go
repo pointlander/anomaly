@@ -21,10 +21,10 @@ type NetworkFactory func(rnd *rand.Rand, vectorizer *Vectorizer) Network
 
 // NewLSTM creates a new LSTM network
 func NewLSTM(rnd *rand.Rand, vectorizer *Vectorizer) Network {
-	return lstm.NewLSTM()
+	return lstm.NewLSTM(rnd)
 }
 
 // NewGRU creates a new GRU network
 func NewGRU(rnd *rand.Rand, vectorizer *Vectorizer) Network {
-	return gru.NewGRU()
+	return gru.NewGRU(rnd)
 }

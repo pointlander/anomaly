@@ -141,8 +141,8 @@ func main() {
 	embeddingSize := 10
 	outputSize := len(vocabulary.List)
 	hiddenSizes := []int{100, 100}
-	stddev := 0.08
-	m := lstm.NewLSTMModel(inputSize, embeddingSize, outputSize, hiddenSizes, stddev)
+	rnd := rand.New(rand.NewSource(1))
+	m := lstm.NewLSTMModel(rnd, inputSize, embeddingSize, outputSize, hiddenSizes)
 	r := lstm.NewCharRNN(m, vocabulary)
 	err := r.ModeLearn(steps)
 	if err != nil {

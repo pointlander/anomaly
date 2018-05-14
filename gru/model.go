@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math"
+	"math/rand"
 	"strconv"
 
 	G "gorgonia.org/gorgonia"
@@ -46,7 +47,16 @@ type Model struct {
 }
 
 // NewModel creates a new GRU model
-func NewModel(inputSize, embeddingSize, outputSize int, layerSizes []int, stddev float64) *Model {
+func NewModel(rnd *rand.Rand, inputSize, embeddingSize, outputSize int, layerSizes []int) *Model {
+	gaussian32 := func(s ...int) []float32 {
+		size := tensor.Shape(s).TotalSize()
+		weights, stdev := make([]float32, size), math.Sqrt(2/float64(s[len(s)-1]))
+		for i := range weights {
+			weights[i] = float32(rnd.NormFloat64() * stdev)
+		}
+		return weights
+	}
+
 	model := &Model{
 		inputSize:     inputSize,
 		embeddingSize: embeddingSize,
@@ -54,7 +64,7 @@ func NewModel(inputSize, embeddingSize, outputSize int, layerSizes []int, stddev
 		layerSizes:    layerSizes,
 	}
 	model.we = tensor.New(tensor.WithShape(embeddingSize, inputSize),
-		tensor.WithBacking(G.Gaussian32(0.0, stddev, embeddingSize, inputSize)))
+		tensor.WithBacking(gaussian32(embeddingSize, inputSize)))
 
 	previous := embeddingSize
 	for _, size := range layerSizes {
@@ -62,15 +72,15 @@ func NewModel(inputSize, embeddingSize, outputSize int, layerSizes []int, stddev
 		model.layers = append(model.layers, layer)
 
 		layer.wf = tensor.New(tensor.WithShape(size, previous),
-			tensor.WithBacking(G.Gaussian32(0.0, stddev, size, previous)))
+			tensor.WithBacking(gaussian32(size, previous)))
 		layer.uf = tensor.New(tensor.WithShape(size, size),
-			tensor.WithBacking(G.Gaussian32(0.0, stddev, size, size)))
+			tensor.WithBacking(gaussian32(size, size)))
 		layer.br = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(size))
 
 		layer.wh = tensor.New(tensor.WithShape(size, previous),
-			tensor.WithBacking(G.Gaussian32(0.0, stddev, size, previous)))
+			tensor.WithBacking(gaussian32(size, previous)))
 		layer.uh = tensor.New(tensor.WithShape(size, size),
-			tensor.WithBacking(G.Gaussian32(0.0, stddev, size, size)))
+			tensor.WithBacking(gaussian32(size, size)))
 		layer.bh = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(size))
 
 		layer.ones = tensor.Ones(tensor.Float32, size)
@@ -79,7 +89,7 @@ func NewModel(inputSize, embeddingSize, outputSize int, layerSizes []int, stddev
 	}
 
 	model.wo = tensor.New(tensor.WithShape(outputSize, previous),
-		tensor.WithBacking(G.Gaussian32(0.0, stddev, outputSize, previous)))
+		tensor.WithBacking(gaussian32(outputSize, previous)))
 	model.bo = tensor.New(tensor.Of(tensor.Float32), tensor.WithShape(outputSize))
 
 	return model
