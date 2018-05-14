@@ -265,39 +265,6 @@ func main() {
 		graph++
 	}
 
-	cutset := func(values *TestResults) []int {
-		set := make([]int, 0)
-		for i, v := range values.Surprise {
-			if math.Abs(v) > values.STDDEV {
-				set = append(set, i)
-			}
-		}
-		return set
-	}
-
-	cut := func(values *TestResults, set []int) *TestResults {
-		cut := make(plotter.Values, 0)
-		for i, v := range values.Surprise {
-			isIn := false
-			for _, x := range set {
-				if x == i {
-					isIn = true
-					break
-				}
-			}
-			if !isIn {
-				cut = append(cut, v)
-			}
-		}
-		return &TestResults{
-			Seed:     values.Seed,
-			Surprise: cut,
-			Average:  values.Average,
-			STDDEV:   values.STDDEV,
-			Results:  values.Results,
-		}
-	}
-
 	averageSimilarity := Anomaly(1, anomaly.NewAverageSimilarity, "average similarity")
 	histogram("Average Similarity Distribution", "average_similarity_distribution.png", averageSimilarity)
 	scatterPlot("Time", "Average Similarity", "average_similarity.png", nil, averageSimilarity)
@@ -318,11 +285,10 @@ func main() {
 	autoencoderError.Print()
 
 	lstmError := Anomaly(1, anomaly.NewLSTM, "lstm")
-	set := cutset(lstmError)
-	histogram("LSTM Distribution", "lstm_distribution.png", cut(lstmError, set))
-	scatterPlot("Time", "LSTM", "lstm.png", nil, cut(lstmError, set))
+	histogram("LSTM Distribution", "lstm_distribution.png", lstmError)
+	scatterPlot("Time", "LSTM", "lstm.png", nil, lstmError)
 	scatterPlot("Average Similarity", "LSTM", "lstm_vs_average_similarity.png",
-		cut(averageSimilarity, set), cut(lstmError, set))
+		averageSimilarity, lstmError)
 	lstmError.Print()
 
 	gruError := Anomaly(1, anomaly.NewGRU, "gru")
