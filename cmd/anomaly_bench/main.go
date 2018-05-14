@@ -13,6 +13,7 @@ import (
 
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/plotutil"
 	"gonum.org/v1/plot/vg"
 
 	"github.com/pointlander/anomaly"
@@ -73,6 +74,7 @@ type TestResults struct {
 	Name            string
 	Seed            int
 	Surprise        plotter.Values
+	Uncertainty     plotter.Values
 	Average, STDDEV float64
 	Results         []TestResult
 }
@@ -97,6 +99,7 @@ func Anomaly(seed int, factory anomaly.NetworkFactory, name string) *TestResults
 	network := factory(rndNetwork, vectorizer)
 
 	surprise, uncertainty := make(plotter.Values, Samples), make(plotter.Values, Samples)
+	hasUncertainty := false
 	for i := 0; i < Samples; i++ {
 		object := anomaly.GenerateRandomJSON(rndGenerator)
 		input, err := json.Marshal(object)
@@ -104,6 +107,9 @@ func Anomaly(seed int, factory anomaly.NetworkFactory, name string) *TestResults
 			panic(err)
 		}
 		s, u := network.Train(input)
+		if u > 0 {
+			hasUncertainty = true
+		}
 		surprise[i], uncertainty[i] = float64(s), float64(u)
 	}
 	surprise = surprise[Cutoff:]
@@ -127,7 +133,7 @@ func Anomaly(seed int, factory anomaly.NetworkFactory, name string) *TestResults
 		results[i].Uncertainty = float64(u)
 	}
 
-	return &TestResults{
+	testResults := &TestResults{
 		Name:     name,
 		Seed:     seed,
 		Surprise: surprise,
@@ -135,6 +141,10 @@ func Anomaly(seed int, factory anomaly.NetworkFactory, name string) *TestResults
 		STDDEV:   stddev,
 		Results:  results,
 	}
+	if hasUncertainty {
+		testResults.Uncertainty = uncertainty
+	}
+	return testResults
 }
 
 // IsCorrect determines if a result is IsCorrect
@@ -224,6 +234,29 @@ func main() {
 		}
 		p.Add(s)
 
+		if uncertainty := yy.Uncertainty; uncertainty != nil {
+			errors := make(plotter.YErrors, len(uncertainty))
+			for k, v := range uncertainty {
+				errors[k].High = v
+				errors[k].Low = v
+			}
+			y := &struct {
+				plotter.XYs
+				plotter.YErrors
+			}{
+				XYs:     xys,
+				YErrors: errors,
+			}
+			bar, err1 := plotter.NewYErrorBars(y)
+			if err1 != nil {
+				panic(err1)
+			}
+			err1 = plotutil.AddErrorBars(p, bar)
+			if err1 != nil {
+				panic(err1)
+			}
+		}
+
 		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("graph_%v_%v", graph, name))
 		if err != nil {
 			panic(err)
@@ -304,6 +337,7 @@ func main() {
 	complexityError.Print()
 
 	metaError := Anomaly(1, anomaly.NewMeta, "meta")
+	scatterPlot("Time", "Meta", "meta.png", nil, metaError)
 	metaError.Print()
 
 	if !*full {
