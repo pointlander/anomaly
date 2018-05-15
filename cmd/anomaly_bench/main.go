@@ -13,6 +13,7 @@ import (
 
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/plotutil"
 	"gonum.org/v1/plot/vg"
 
 	"github.com/pointlander/anomaly"
@@ -63,8 +64,9 @@ func dtanh32(x float32) float32 {
 
 // TestResult is a test result
 type TestResult struct {
-	Surprise float64
-	Raw      float64
+	Surprise    float64
+	Uncertainty float64
+	Raw         float64
 }
 
 // TestResults are the test results from Anomaly
@@ -72,6 +74,7 @@ type TestResults struct {
 	Name            string
 	Seed            int
 	Surprise        plotter.Values
+	Uncertainty     plotter.Values
 	Average, STDDEV float64
 	Results         []TestResult
 }
@@ -88,61 +91,26 @@ func statistics(values plotter.Values) (average, stddev float64) {
 	return
 }
 
-// Anomaly tests the anomaly detection algorithm
+// Anomaly tests the anomaly detection algorithms
 func Anomaly(seed int, factory anomaly.NetworkFactory, name string) *TestResults {
 	rndGenerator := rand.New(rand.NewSource(int64(seed)))
 	rndNetwork := rand.New(rand.NewSource(int64(seed)))
 	vectorizer := anomaly.NewVectorizer(VectorSize, true, anomaly.NewLFSR32Source)
-	network := factory(VectorSize, rndNetwork)
+	network := factory(rndNetwork, vectorizer)
 
-	surprise := make(plotter.Values, Samples)
-	for i := 0; i < Samples; i++ {
-		object := anomaly.GenerateRandomJSON(rndGenerator)
-		vector := vectorizer.Vectorize(object)
-		unit := anomaly.Normalize(vector)
-		surprise[i] = float64(network.Train(unit))
-	}
-	surprise = surprise[Cutoff:]
-
-	average, stddev := statistics(surprise)
-
-	results := make([]TestResult, len(Tests))
-	for i, test := range Tests {
-		var object map[string]interface{}
-		err := json.Unmarshal([]byte(test), &object)
-		if err != nil {
-			panic(err)
-		}
-		vector := vectorizer.Vectorize(object)
-		unit := anomaly.Normalize(vector)
-		e := float64(network.Train(unit))
-		results[i].Raw = e
-		results[i].Surprise = math.Abs((e - average) / stddev)
-	}
-
-	return &TestResults{
-		Name:     name,
-		Seed:     seed,
-		Surprise: surprise,
-		Average:  average,
-		STDDEV:   stddev,
-		Results:  results,
-	}
-}
-
-// AnomalyRecurrent tests the LSTM anomaly detection algorithm
-func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory, name string) *TestResults {
-	rndGenerator := rand.New(rand.NewSource(int64(seed)))
-	network := factory()
-
-	surprise := make(plotter.Values, Samples)
+	surprise, uncertainty := make(plotter.Values, Samples), make(plotter.Values, Samples)
+	hasUncertainty := false
 	for i := 0; i < Samples; i++ {
 		object := anomaly.GenerateRandomJSON(rndGenerator)
 		input, err := json.Marshal(object)
 		if err != nil {
 			panic(err)
 		}
-		surprise[i] = float64(network.Train(input))
+		s, u := network.Train(input)
+		if u > 0 {
+			hasUncertainty = true
+		}
+		surprise[i], uncertainty[i] = float64(s), float64(u)
 	}
 	surprise = surprise[Cutoff:]
 
@@ -159,12 +127,13 @@ func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory, name string)
 		if err != nil {
 			panic(err)
 		}
-		e := float64(network.Train([]byte(input)))
-		results[i].Raw = e
-		results[i].Surprise = math.Abs((e - average) / stddev)
+		s, u := network.Train([]byte(input))
+		results[i].Raw = float64(s)
+		results[i].Surprise = math.Abs((float64(s) - average) / stddev)
+		results[i].Uncertainty = float64(u)
 	}
 
-	return &TestResults{
+	testResults := &TestResults{
 		Name:     name,
 		Seed:     seed,
 		Surprise: surprise,
@@ -172,6 +141,10 @@ func AnomalyRecurrent(seed int, factory anomaly.ByteNetworkFactory, name string)
 		STDDEV:   stddev,
 		Results:  results,
 	}
+	if hasUncertainty {
+		testResults.Uncertainty = uncertainty
+	}
+	return testResults
 }
 
 // IsCorrect determines if a result is IsCorrect
@@ -182,9 +155,16 @@ func (t *TestResults) IsCorrect() bool {
 // Print prints test results
 func (t *TestResults) Print() {
 	results := t.Results
+	if results[0].Uncertainty != 0 && results[1].Uncertainty != 0 {
+		fmt.Printf("%v %v %.6f (%.6f+-%.6f) %.6f (%.6f+-%.6f)\n", t.Seed, t.Name,
+			results[0].Surprise, results[0].Raw, results[0].Uncertainty,
+			results[1].Surprise, results[1].Raw, results[1].Uncertainty)
+		return
+	}
 	fmt.Printf("%v %v %.6f (%.6f) %.6f (%.6f)\n", t.Seed, t.Name,
 		results[0].Surprise, results[0].Raw,
 		results[1].Surprise, results[1].Raw)
+
 }
 
 var full = flag.Bool("full", false, "run full bench")
@@ -254,45 +234,35 @@ func main() {
 		}
 		p.Add(s)
 
+		if uncertainty := yy.Uncertainty; uncertainty != nil {
+			errors := make(plotter.YErrors, len(uncertainty))
+			for k, v := range uncertainty {
+				errors[k].High = v
+				errors[k].Low = v
+			}
+			y := &struct {
+				plotter.XYs
+				plotter.YErrors
+			}{
+				XYs:     xys,
+				YErrors: errors,
+			}
+			bar, err1 := plotter.NewYErrorBars(y)
+			if err1 != nil {
+				panic(err1)
+			}
+			err1 = plotutil.AddErrorBars(p, bar)
+			if err1 != nil {
+				panic(err1)
+			}
+		}
+
 		err = p.Save(8*vg.Inch, 8*vg.Inch, fmt.Sprintf("graph_%v_%v", graph, name))
 		if err != nil {
 			panic(err)
 		}
 
 		graph++
-	}
-
-	cutset := func(values *TestResults) []int {
-		set := make([]int, 0)
-		for i, v := range values.Surprise {
-			if math.Abs(v) > values.STDDEV {
-				set = append(set, i)
-			}
-		}
-		return set
-	}
-
-	cut := func(values *TestResults, set []int) *TestResults {
-		cut := make(plotter.Values, 0)
-		for i, v := range values.Surprise {
-			isIn := false
-			for _, x := range set {
-				if x == i {
-					isIn = true
-					break
-				}
-			}
-			if !isIn {
-				cut = append(cut, v)
-			}
-		}
-		return &TestResults{
-			Seed:     values.Seed,
-			Surprise: cut,
-			Average:  values.Average,
-			STDDEV:   values.STDDEV,
-			Results:  values.Results,
-		}
 	}
 
 	averageSimilarity := Anomaly(1, anomaly.NewAverageSimilarity, "average similarity")
@@ -314,24 +284,27 @@ func main() {
 		averageSimilarity, autoencoderError)
 	autoencoderError.Print()
 
-	lstmError := AnomalyRecurrent(1, anomaly.NewLSTM, "lstm")
-	set := cutset(lstmError)
-	histogram("LSTM Distribution", "lstm_distribution.png", cut(lstmError, set))
-	scatterPlot("Time", "LSTM", "lstm.png", nil, cut(lstmError, set))
+	lstmError := Anomaly(1, anomaly.NewLSTM, "lstm")
+	histogram("LSTM Distribution", "lstm_distribution.png", lstmError)
+	scatterPlot("Time", "LSTM", "lstm.png", nil, lstmError)
 	scatterPlot("Average Similarity", "LSTM", "lstm_vs_average_similarity.png",
-		cut(averageSimilarity, set), cut(lstmError, set))
+		averageSimilarity, lstmError)
 	lstmError.Print()
 
-	gruError := AnomalyRecurrent(1, anomaly.NewGRU, "gru")
+	gruError := Anomaly(1, anomaly.NewGRU, "gru")
 	histogram("GRU Distribution", "gru_distribution.png", gruError)
 	scatterPlot("Time", "GRU", "gru.png", nil, gruError)
 	scatterPlot("GRU", "LSTM", "lstm_vs_gru.png", gruError, lstmError)
 	gruError.Print()
 
-	complexityError := AnomalyRecurrent(1, anomaly.NewComplexity, "complexity")
+	complexityError := Anomaly(1, anomaly.NewComplexity, "complexity")
 	histogram("Complexity Distribution", "complexity_distribution.png", complexityError)
 	scatterPlot("Time", "Complexity", "complexity.png", nil, complexityError)
 	complexityError.Print()
+
+	metaError := Anomaly(1, anomaly.NewMeta, "meta")
+	scatterPlot("Time", "Meta", "meta.png", nil, metaError)
+	metaError.Print()
 
 	if !*full {
 		return

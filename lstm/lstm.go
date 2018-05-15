@@ -2,6 +2,7 @@ package lstm
 
 import (
 	"fmt"
+	"math/rand"
 
 	G "gorgonia.org/gorgonia"
 )
@@ -14,7 +15,7 @@ type LSTM struct {
 }
 
 // NewLSTM creates a new LSTM anomaly detection engine
-func NewLSTM() *LSTM {
+func NewLSTM(rnd *rand.Rand) *LSTM {
 	steps := 4
 	vocabulary := NewVocabularyFromRange(0, 256)
 
@@ -22,8 +23,7 @@ func NewLSTM() *LSTM {
 	embeddingSize := 10
 	outputSize := len(vocabulary.List)
 	hiddenSizes := []int{10}
-	stddev := 0.08
-	lstm := NewLSTMModel(inputSize, embeddingSize, outputSize, hiddenSizes, stddev)
+	lstm := NewLSTMModel(rnd, inputSize, embeddingSize, outputSize, hiddenSizes)
 
 	learner := NewCharRNN(lstm, vocabulary)
 	err := learner.ModeLearn(steps)
@@ -50,7 +50,7 @@ func NewLSTM() *LSTM {
 }
 
 // Train trains the LSTM
-func (l *LSTM) Train(input []byte) float32 {
+func (l *LSTM) Train(input []byte) (surprise, uncertainty float32) {
 	cost := l.inference.Cost(input)
 
 	data := make([]rune, len(input))
@@ -62,5 +62,5 @@ func (l *LSTM) Train(input []byte) float32 {
 		panic(fmt.Sprintf("%+v", err))
 	}
 
-	return float32(cost) / float32(len(input))
+	return float32(cost) / float32(len(input)), 0
 }

@@ -81,51 +81,57 @@ func BenchmarkVectorizerLFSRNoCache(b *testing.B) {
 func BenchmarkAverageSimilarity(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
 	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
-	network := NewAverageSimilarity(1024, rnd)
+	network := NewAverageSimilarity(rnd, vectorizer)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		object := GenerateRandomJSON(rnd)
+		input, err := json.Marshal(object)
+		if err != nil {
+			panic(err)
+		}
 		b.StartTimer()
-		vector := vectorizer.Vectorize(object)
-		unit := Normalize(vector)
-		network.Train(unit)
+		network.Train(input)
 	}
 }
 
 func BenchmarkNeuron(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
 	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
-	network := NewNeuron(1024, rnd)
+	network := NewNeuron(rnd, vectorizer)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		object := GenerateRandomJSON(rnd)
+		input, err := json.Marshal(object)
+		if err != nil {
+			panic(err)
+		}
 		b.StartTimer()
-		vector := vectorizer.Vectorize(object)
-		unit := Normalize(vector)
-		network.Train(unit)
+		network.Train(input)
 	}
 }
 
 func BenchmarkAutoencoder(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
 	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
-	network := NewAutoencoder(1024, rnd)
+	network := NewAutoencoder(rnd, vectorizer)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
 		object := GenerateRandomJSON(rnd)
+		input, err := json.Marshal(object)
+		if err != nil {
+			panic(err)
+		}
 		b.StartTimer()
-		vector := vectorizer.Vectorize(object)
-		unit := Normalize(vector)
-		network.Train(unit)
+		network.Train(input)
 	}
 }
 
 func BenchmarkLSTM(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	network := lstm.NewLSTM()
+	network := lstm.NewLSTM(rnd)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
@@ -141,7 +147,7 @@ func BenchmarkLSTM(b *testing.B) {
 
 func BenchmarkGRU(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	network := gru.NewGRU()
+	network := gru.NewGRU(rnd)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()
@@ -157,7 +163,8 @@ func BenchmarkGRU(b *testing.B) {
 
 func BenchmarkComplexity(b *testing.B) {
 	rnd := rand.New(rand.NewSource(1))
-	network := NewComplexity()
+	vectorizer := NewVectorizer(1024, true, NewLFSR32Source)
+	network := NewComplexity(rnd, vectorizer)
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		b.StopTimer()

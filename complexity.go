@@ -4,7 +4,10 @@
 
 package anomaly
 
-import "math/bits"
+import (
+	"math/bits"
+	"math/rand"
+)
 
 const (
 	// CDF16Fixed is the shift for 16 bit coders
@@ -148,14 +151,14 @@ type Complexity struct {
 }
 
 // NewComplexity creates a new entorpy based model
-func NewComplexity() ByteNetwork {
+func NewComplexity(rnd *rand.Rand, vectorizer *Vectorizer) Network {
 	return &Complexity{
 		CDF16: NewCDF16(),
 	}
 }
 
 // Train trains the Complexity
-func (c *Complexity) Train(input []byte) float32 {
+func (c *Complexity) Train(input []byte) (surprise, uncertainty float32) {
 	var total uint64
 	for _, s := range input {
 		model := c.Model()
@@ -167,5 +170,5 @@ func (c *Complexity) Train(input []byte) float32 {
 		c.Update(uint16(s))
 	}
 	c.ResetContext()
-	return float32(CDF16Fixed+1) - (float32(total) / float32(len(input)))
+	return float32(CDF16Fixed+1) - (float32(total) / float32(len(input))), 0
 }

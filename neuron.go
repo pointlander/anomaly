@@ -5,6 +5,7 @@
 package anomaly
 
 import (
+	"encoding/json"
 	"math"
 	"math/rand"
 
@@ -20,10 +21,12 @@ type Neuron struct {
 	gg.VM
 	gg.Nodes
 	*gg.VanillaSolver
+	*Vectorizer
 }
 
 // NewNeuron creates a new neuron
-func NewNeuron(width int, rnd *rand.Rand) Network {
+func NewNeuron(rnd *rand.Rand, vectorizer *Vectorizer) Network {
+	width := vectorizer.Size
 	ii := tensor.NewDense(tensor.Float32, tensor.Shape{width})
 	ww := tensor.NewDense(tensor.Float32, tensor.Shape{width})
 
@@ -59,16 +62,25 @@ func NewNeuron(width int, rnd *rand.Rand) Network {
 		VM:            gg.NewTapeMachine(g, gg.BindDualValues(w)),
 		Nodes:         gg.Nodes{w},
 		VanillaSolver: gg.NewVanillaSolver(gg.WithLearnRate(0.5)),
+		Vectorizer:    vectorizer,
 	}
 }
 
 // Train trains the neuron
-func (n *Neuron) Train(input []float32) float32 {
-	for i, v := range input {
+func (n *Neuron) Train(input []byte) (surprise, uncertainty float32) {
+	var object map[string]interface{}
+	err := json.Unmarshal(input, &object)
+	if err != nil {
+		panic(err)
+	}
+	vector := n.Vectorizer.Vectorize(object)
+	unit := Normalize(vector)
+
+	for i, v := range unit {
 		n.I.SetAt(v, i)
 	}
 
-	err := n.RunAll()
+	err = n.RunAll()
 	if err != nil {
 		panic(err)
 	}
@@ -81,5 +93,5 @@ func (n *Neuron) Train(input []float32) float32 {
 		panic(err)
 	}
 
-	return float32(math.Abs(float64(cs)))
+	return float32(math.Abs(float64(cs))), 0
 }
