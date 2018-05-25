@@ -435,6 +435,22 @@ func (r *CharRNN) ModeInference() (err error) {
 	return
 }
 
+// ModeInferencePredict puts the CharRNN into inference prediction mode
+func (r *CharRNN) ModeInferencePredict() (err error) {
+	inputs := make([]*tensor.Dense, 1)
+	previous := make([]*lstmOut, 1)
+
+	inputs[0], previous[0], err = r.fwd(nil)
+	if err != nil {
+		return
+	}
+
+	r.inputs = inputs
+	r.previous = previous
+	r.machine = G.NewTapeMachine(r.g)
+	return
+}
+
 // Predict genreates a string
 func (r *CharRNN) Predict() {
 	var sentence []rune

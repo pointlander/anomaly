@@ -122,7 +122,7 @@ func main() {
 	steps := 8
 	var sentences [][]rune
 	sentencesRaw := strings.Split(lstm.Corpus, "\n")
-	sentencesRaw = []string{strings.Join(sentencesRaw, " ")}
+	//sentencesRaw = []string{strings.Join(sentencesRaw, " ")}
 	//sentencesRaw = []string{"abababababababababab"}
 	for _, s := range sentencesRaw {
 		s2 := []rune(strings.TrimSpace(s))
@@ -140,7 +140,7 @@ func main() {
 	inputSize := len(vocabulary.List)
 	embeddingSize := 10
 	outputSize := len(vocabulary.List)
-	hiddenSizes := []int{100, 100}
+	hiddenSizes := []int{100}
 	rnd := rand.New(rand.NewSource(1))
 	m := lstm.NewLSTMModel(rnd, inputSize, embeddingSize, outputSize, hiddenSizes)
 	r := lstm.NewCharRNN(m, vocabulary)
@@ -150,7 +150,7 @@ func main() {
 	}
 
 	predict := lstm.NewCharRNN(m, vocabulary)
-	err = predict.ModeInference()
+	err = predict.ModeInferencePredict()
 	if err != nil {
 		panic(err)
 	}
@@ -181,7 +181,7 @@ func main() {
 		costAvg /= float64(len(cost))
 		perpAvg /= float64(len(perp))
 
-		if i%1 == 0 {
+		if i%10 == 0 {
 			log.Printf("Going to predict now")
 			predict.Predict()
 			log.Printf("Done predicting")
